@@ -5,7 +5,7 @@ export WINEPREFIX="${WINEPREFIX:-$HOME/.wine-ni}"
 export WINEARCH="${WINEARCH:-win64}"
 
 echo "==> Initializing Wine prefix (dismissing Mono installer)..."
-xvfb-dismiss 98 "Wine Mono Installer" Escape wineboot -i
+xvfb-dismiss 98 "Wine Mono Installer" Escape wineboot -i || true
 
 echo "==> Disabling winemenubuilder (no .desktop files)..."
 wine reg add 'HKCU\Software\Wine\DllOverrides' \
