@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Native Access
+Exec=sh -c 'WINEPREFIX="$HOME/.wine-ni" wine "$HOME/.wine-ni/drive_c/Program Files/Common Files/Native Instruments/NTK/NTKDaemon.exe"; WINEPREFIX="$HOME/.wine-ni" wine "$HOME/.wine-ni/drive_c/users/$USER/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Native Access.lnk"'
+Type=Application
+StartupNotify=true
+Comment=Native Access is your one-stop hub for easy product installation, registration, and updates.
+Icon=0A1A_Native Access.0
+StartupWMClass=native access.exe
