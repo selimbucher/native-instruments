@@ -4,7 +4,7 @@
 # from the official VC++ 2022 redistributable.
 #
 # Usage: ./fix-wine-msvcp140.sh [WINEPREFIX]
-# Default WINEPREFIX: ~/.wine
+# Default WINEPREFIX: ~/.wine-ni
 #
 # On NixOS:
 #   nix-shell -p curl cabextract --run "./fix-wine-msvcp140.sh ~/.wine-ni"
