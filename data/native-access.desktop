@@ -2,6 +2,7 @@
 Name=Native Access
 Comment=Native Access is your one-stop hub for easy product installation, registration, and updates.
 Exec=native-access
+Icon=0A1A_Native Access.0
 Type=Application
 StartupNotify=true
 StartupWMClass=native access.exe
