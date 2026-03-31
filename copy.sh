@@ -22,12 +22,11 @@ for arg in "$@"; do
   esac
 done
 
-# Download if not already cached
-if [ ! -f "$ARCHIVE_FILE" ]; then
-  echo "Downloading $ARCHIVE_URL ..."
-  curl -L --progress-bar -o "$ARCHIVE_FILE" "$ARCHIVE_URL"
-else
-  echo "Archive already exists at $ARCHIVE_FILE, skipping download."
+# Download only if remote is newer than local copy (or local doesn't exist)
+echo "Checking for updates: $ARCHIVE_URL ..."
+if ! curl -L --progress-bar -z "$ARCHIVE_FILE" -o "$ARCHIVE_FILE" "$ARCHIVE_URL"; then
+  echo "Error: download failed" >&2
+  exit 1
 fi
 
 # Extract

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Native Access
+Comment=Native Access is your one-stop hub for easy product installation, registration, and updates.
+Exec=native-access
+Type=Application
+StartupNotify=true
+StartupWMClass=native access.exe

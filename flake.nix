@@ -8,130 +8,64 @@
     pkgs = nixpkgs.legacyPackages.${system};
     wine = pkgs.wineWow64Packages.staging;
 
-    xvfb-dismiss = pkgs.writeShellScriptBin "xvfb-dismiss" ''
-      DISPLAY_NUM=$1; shift
-      WIN_NAME=$1; shift
-      KEY=$1; shift
+    native-instruments = pkgs.stdenv.mkDerivation {
+      pname = "native-instruments";
+      version = "1.0.0";
+      src = ./.;
 
-      ${pkgs.xvfb-run}/bin/xvfb-run -n "$DISPLAY_NUM" "$@" &
-      CMD_PID=$!
+      nativeBuildInputs = [ pkgs.makeShellWrapper ];
 
-      sleep 1
-      while kill -0 "$CMD_PID" 2>/dev/null; do
-        WID=$(DISPLAY=":$DISPLAY_NUM" ${pkgs.xdotool}/bin/xdotool search --name "$WIN_NAME" 2>/dev/null | head -1)
-        if [ -n "$WID" ]; then
-          DISPLAY=":$DISPLAY_NUM" ${pkgs.xdotool}/bin/xdotool key --window "$WID" "$KEY"
-        fi
-        sleep 0.5
-      done
+      buildInputs = [ wine pkgs.winetricks pkgs.xvfb-run pkgs.xdotool pkgs.curl ];
 
-      wait "$CMD_PID"
-    '';
+      installPhase = ''
+        mkdir -p $out/bin $out/share/applications
 
-    ni-setup = pkgs.writeShellScriptBin "ni-setup" ''
-      export WINEPREFIX="$HOME/.wine-ni"
-      export WINEARCH="win64"
+        # xvfb-dismiss helper
+        makeShellWrapper ${pkgs.bash}/bin/bash $out/bin/xvfb-dismiss \
+          --add-flags "$src/scripts/xvfb-dismiss.sh" \
+          --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.xvfb-run pkgs.xdotool ]}
 
-      echo "==> Initializing Wine prefix (dismissing Mono installer)..."
-      ${xvfb-dismiss}/bin/xvfb-dismiss 98 "Wine Mono Installer" Escape \
-        ${wine}/bin/wineboot -i
+        # ni-setup
+        makeShellWrapper ${pkgs.bash}/bin/bash $out/bin/ni-setup \
+          --add-flags "$src/scripts/ni-setup.sh" \
+          --prefix PATH : ${pkgs.lib.makeBinPath [ wine pkgs.winetricks pkgs.xvfb-run pkgs.curl ]} \
+          --set-default WINEPREFIX "$HOME/.wine-ni" \
+          --set-default WINEARCH win64
 
-      echo "==> Disabling winemenubuilder (no .desktop files)..."
-      ${wine}/bin/wine reg add 'HKCU\Software\Wine\DllOverrides' \
-        /v 'winemenubuilder.exe' /t REG_SZ /d "" /f 2>/dev/null
+        # ni-launch
+        makeShellWrapper ${pkgs.bash}/bin/bash $out/bin/native-access \
+          --add-flags "$src/scripts/ni-launch.sh" \
+          --prefix PATH : ${pkgs.lib.makeBinPath [ wine ]} \
+          --set-default WINEPREFIX "$HOME/.wine-ni"
 
-      echo "==> Removing home folder symlinks from Wine prefix..."
-      for link in \
-        "$WINEPREFIX/drive_c/users/$USER/Desktop" \
-        "$WINEPREFIX/drive_c/users/$USER/Documents" \
-        "$WINEPREFIX/drive_c/users/$USER/My Documents" \
-        "$WINEPREFIX/drive_c/users/$USER/Downloads" \
-        "$WINEPREFIX/drive_c/users/$USER/Music" \
-        "$WINEPREFIX/drive_c/users/$USER/My Music" \
-        "$WINEPREFIX/drive_c/users/$USER/Pictures" \
-        "$WINEPREFIX/drive_c/users/$USER/My Pictures" \
-        "$WINEPREFIX/drive_c/users/$USER/Videos" \
-        "$WINEPREFIX/drive_c/users/$USER/My Videos" \
-        "$WINEPREFIX/drive_c/users/$USER/Templates" \
-      ; do
-        if [ -L "$link" ]; then
-          rm "$link"
-          mkdir -p "$link"
-        fi
-      done
-
-      echo "==> Installing vcrun2022..."
-      ${pkgs.xvfb-run}/bin/xvfb-run --auto-servernum \
-        ${pkgs.winetricks}/bin/winetricks --unattended vcrun2022
-
-      echo "==> Installing PowerShell..."
-      ${pkgs.xvfb-run}/bin/xvfb-run --auto-servernum \
-        ${pkgs.winetricks}/bin/winetricks --unattended powershell
-
-      echo "==> Downloading Native Access installer..."
-      NA_INSTALLER="/tmp/Native-Access_2.exe"
-      ${pkgs.curl}/bin/curl -L --progress-bar \
-        -z "$NA_INSTALLER" \
-        -o "$NA_INSTALLER" \
-        "https://www.native-instruments.com/fileadmin/downloads/Native-Access_2.exe"
-      echo "==> Installing Native Access..."
-      ${xvfb-dismiss}/bin/xvfb-dismiss 98 "Warning" Return \
-        ${wine}/bin/wine "$NA_INSTALLER"
-      ${wine}/bin/wineserver -k || true
-
-      echo "==> Installing NTKDaemon..."
-      NTK_INSTALLER=$(ls "$HOME/.wine-ni/drive_c/Program Files/Native Instruments/Native Access/resources/daemon/win/NTKDaemon "*.exe 2>/dev/null | head -1)
-      if [ -z "$NTK_INSTALLER" ]; then
-        echo "Error: NTKDaemon installer not found" >&2
-        exit 1
-      fi
-      ${pkgs.xvfb-run}/bin/xvfb-run --auto-servernum ${wine}/bin/wine "$NTK_INSTALLER" /s
-      ${wine}/bin/wineserver -k || true
-
-      echo "==> Done. Prefix ready at $WINEPREFIX"
-    '';
-
-  in {
-    # Dev shell for manual setup / debugging
-    devShells.${system}.default = pkgs.mkShell {
-      packages = [
-        wine
-        pkgs.winetricks
-        pkgs.xvfb-run
-        pkgs.xdotool
-        pkgs.curl
-        ni-setup
-        xvfb-dismiss
-      ];
-
-      shellHook = ''
-        export WINEPREFIX="$HOME/.wine-ni"
-        export WINEARCH="win64"
+        cp data/native-access.desktop $out/share/applications/native-access.desktop
       '';
     };
 
-    # Home-manager module
-    homeManagerModules.default = { lib, ... }: {
-      home.packages = [ wine ni-setup ];
+  in {
+    packages.${system}.default = native-instruments;
 
-      xdg.desktopEntries.native-access = {
-        name = "Native Access";
-        comment = "Native Access is your one-stop hub for easy product installation, registration, and updates.";
-        exec = ''sh -c 'WINEPREFIX="$HOME/.wine-ni" wine "$HOME/.wine-ni/drive_c/Program Files/Common Files/Native Instruments/NTK/NTKDaemon.exe"; WINEPREFIX="$HOME/.wine-ni" wine "$HOME/.wine-ni/drive_c/users/$USER/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Native Access.lnk"' '';
-        settings = {
-          startupWMClass = "native access.exe";
-        };
-      };
+    homeManagerModules.default = { lib, ... }: {
+      home.packages = [ native-instruments ];
 
       home.activation.nativeInstruments = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
         MARKER="$HOME/.wine-ni/.setup-version"
         EXPECTED="${self.rev or "dirty"}"
 
         if [ ! -f "$MARKER" ] || [ "$(cat "$MARKER")" != "$EXPECTED" ]; then
-          echo "==> Native Instruments: setting up Wine prefix (version $EXPECTED)..."
-          ${ni-setup}/bin/ni-setup
+          echo "==> Native Instruments: setting up Wine prefix..."
+          ${native-instruments}/bin/ni-setup
           echo "$EXPECTED" > "$MARKER"
         fi
+      '';
+    };
+
+    devShells.${system}.default = pkgs.mkShell {
+      packages = [ native-instruments wine pkgs.winetricks pkgs.xvfb-run pkgs.xdotool pkgs.curl ];
+
+      shellHook = ''
+        export WINEPREFIX="$HOME/.wine-ni"
+        export WINEARCH="win64"
       '';
     };
   };
