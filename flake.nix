@@ -28,15 +28,12 @@
         # ni-setup
         makeShellWrapper ${pkgs.bash}/bin/bash $out/bin/ni-setup \
           --add-flags "$src/scripts/ni-setup.sh" \
-          --prefix PATH : ${pkgs.lib.makeBinPath [ wine pkgs.winetricks pkgs.xvfb-run pkgs.curl ]} \
-          --set-default WINEPREFIX "$HOME/.wine-ni" \
-          --set-default WINEARCH win64
+          --prefix PATH : ${pkgs.lib.makeBinPath [ wine pkgs.winetricks pkgs.xvfb-run pkgs.curl ]}
 
         # ni-launch
         makeShellWrapper ${pkgs.bash}/bin/bash $out/bin/native-access \
           --add-flags "$src/scripts/ni-launch.sh" \
-          --prefix PATH : ${pkgs.lib.makeBinPath [ wine ]} \
-          --set-default WINEPREFIX "$HOME/.wine-ni"
+          --prefix PATH : ${pkgs.lib.makeBinPath [ wine ]}
 
         cp data/native-access.desktop $out/share/applications/native-access.desktop
       '';
