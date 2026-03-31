@@ -68,12 +68,13 @@
       ${pkgs.xvfb-run}/bin/xvfb-run --auto-servernum \
         ${pkgs.winetricks}/bin/winetricks --unattended powershell
 
+      echo "==> Downloading Native Access installer..."
+      NA_INSTALLER="/tmp/Native-Access_2.exe"
+      ${pkgs.curl}/bin/curl -L --progress-bar \
+        -z "$NA_INSTALLER" \
+        -o "$NA_INSTALLER" \
+        "https://www.native-instruments.com/fileadmin/downloads/Native-Access_2.exe"
       echo "==> Installing Native Access..."
-      NA_INSTALLER="$PWD/Native-Access_2.exe"
-      if [ ! -f "$NA_INSTALLER" ]; then
-        echo "Error: $NA_INSTALLER not found. Run ni-setup from the project directory." >&2
-        exit 1
-      fi
       ${xvfb-dismiss}/bin/xvfb-dismiss 98 "Warning" Return \
         ${wine}/bin/wine "$NA_INSTALLER"
       ${wine}/bin/wineserver -k || true
