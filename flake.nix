@@ -117,8 +117,10 @@
       xdg.desktopEntries.native-access = {
         name = "Native Access";
         comment = "Native Access is your one-stop hub for easy product installation, registration, and updates.";
-        startupWMClass = "native access.exe";
         exec = ''sh -c 'WINEPREFIX="$HOME/.wine-ni" wine "$HOME/.wine-ni/drive_c/Program Files/Common Files/Native Instruments/NTK/NTKDaemon.exe"; WINEPREFIX="$HOME/.wine-ni" wine "$HOME/.wine-ni/drive_c/users/$USER/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Native Access.lnk"' '';
+        settings = {
+          startupWMClass = "native access.exe";
+        };
       };
 
       home.activation.nativeInstruments = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
