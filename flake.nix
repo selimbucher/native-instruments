@@ -160,7 +160,9 @@ CSSEOF
         ${ni-setup}/bin/ni-setup --ui
       fi
 
-      ${wine}/bin/wine "$NTK_EXE"
+      if ! pgrep -f "NTKDaemon.exe" > /dev/null 2>&1; then
+        ${wine}/bin/wine "$NTK_EXE"
+      fi
       ${wine}/bin/wine "$WINEPREFIX/drive_c/users/$USER/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Native Access.lnk"
     '';
 
