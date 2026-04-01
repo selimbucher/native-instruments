@@ -13,7 +13,7 @@ Re-runs skip the slow extraction step. Delete K8_CACHE to force re-extract.
 import os, sys, shutil, subprocess, zipfile
 from pathlib import Path
 
-ZIP   = Path(sys.argv[1]) if len(sys.argv) > 1 else None
+ZIP   = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else None
 OUT   = Path(os.environ.get("OUT",      "/tmp/k8_drive_c"))
 UPDATE = os.environ.get("K8_UPDATE", "") == "1"  # if set, overwrite existing files
 # Cache dir is determined after ZIP is validated (keyed on zip checksum)
@@ -22,10 +22,10 @@ if not ZIP:
     print("Usage: OUT=<dir> python3 extract_kontakt8.py <Kontakt_8_Installer.zip>", file=sys.stderr)
     sys.exit(1)
 
-# Cache keyed on zip checksum so different versions never collide
+# Cache keyed on zip checksum — each version gets its own cache in /tmp
 import hashlib, glob
 zip_hash = hashlib.md5(ZIP.read_bytes()).hexdigest()[:12]
-CACHE = Path(os.environ.get("K8_CACHE", f"/tmp/k8_cache_{zip_hash}"))
+CACHE = Path(f"/tmp/k8_cache_{zip_hash}")
 
 # ---------------------------------------------------------------------------
 # Hex-decode NI's MSI key encoding (5c=\, 20=space, 2d=-, ...)
@@ -90,7 +90,7 @@ else:
         if old_dir != str(CACHE):
             shutil.rmtree(old_dir, ignore_errors=True)
     shutil.rmtree(CACHE, ignore_errors=True)
-    CACHE.mkdir(parents=True, exist_ok=True)
+    CACHE.mkdir(parents=True)
     print("==> Extracting zip...")
     with zipfile.ZipFile(ZIP) as zf:
         zf.extractall(CACHE / "zip")
@@ -105,12 +105,12 @@ else:
 msis = list((CACHE / "exe").rglob("*.msi"))
 if not msis:
     print("ERROR: No .msi found", file=sys.stderr); sys.exit(1)
-MSI = msis[0]
+MSI = msis[0].resolve()
 
 offlines = [p for p in (CACHE / "exe").rglob("OFFLINE") if p.is_dir()]
 if not offlines:
     print("ERROR: No OFFLINE dir found", file=sys.stderr); sys.exit(1)
-OFFLINE = offlines[0]
+OFFLINE = offlines[0].resolve()
 
 print(f"==> MSI:     {MSI}")
 print(f"==> OFFLINE: {OFFLINE}")
