@@ -32,16 +32,70 @@
       export WINEPREFIX="$HOME/.wine-ni"
       export WINEARCH="win64"
 
-      echo "==> Initializing Wine prefix..."
+      UI=false
+      [[ ''${1:-} == --ui ]] && UI=true
+
+      if $UI; then
+        PIPE=$(mktemp -u)
+        mkfifo "$PIPE"
+        CSS=$(mktemp --suffix=.css)
+        cat > "$CSS" << 'CSSEOF'
+window, .dialog {
+  background-color: #1a1a1a;
+  color: #ffffff;
+}
+label {
+  color: #ffffff;
+  margin-bottom: 8px;
+}
+progressbar trough {
+  background-color: #333333;
+  border-radius: 4px;
+}
+progressbar progress {
+  background-color: #ffffff;
+  border-radius: 4px;
+}
+.dialog-action-area {
+  margin: 0;
+  padding: 0;
+}
+CSSEOF
+        ${pkgs.yad}/bin/yad \
+          --progress \
+          --title="Native Instruments Setup" \
+          --text="Native Access Setup" \
+          --percentage=0 \
+          --auto-close \
+          --auto-kill \
+          --center \
+          --width=480 \
+          --no-buttons \
+          --borders=16 \
+          --gtkrc="$CSS" \
+          < "$PIPE" &
+        exec 3>"$PIPE"
+        trap "exec 3>&-; rm -f '$PIPE' '$CSS'" EXIT
+      fi
+
+      step() {
+        echo "==> $1"
+        if $UI; then
+          echo "# $1" >&3
+          echo "$2"   >&3
+        fi
+      }
+
+      step "Initializing Wine prefix..." 5
       WINEDLLOVERRIDES="mscoree,mshtml=" ${pkgs.xvfb-run}/bin/xvfb-run --auto-servernum \
         ${wine}/bin/wineboot -i
 
-      echo "==> Disabling winemenubuilder (no .desktop files)..."
+      step "Disabling winemenubuilder..." 12
       ${pkgs.xvfb-run}/bin/xvfb-run --auto-servernum \
         ${wine}/bin/wine reg add 'HKCU\Software\Wine\DllOverrides' \
         /v 'winemenubuilder.exe' /t REG_SZ /d "" /f 2>/dev/null || true
 
-      echo "==> Removing home folder symlinks from Wine prefix..."
+      step "Cleaning up home folder symlinks..." 18
       for link in \
         "$WINEPREFIX/drive_c/users/$USER/Desktop" \
         "$WINEPREFIX/drive_c/users/$USER/Documents" \
@@ -61,27 +115,27 @@
         fi
       done
 
-      echo "==> Installing vcrun2022..."
+      step "Installing vcrun2022..." 25
       ${pkgs.xvfb-run}/bin/xvfb-run --auto-servernum \
         ${pkgs.winetricks}/bin/winetricks --unattended vcrun2022
 
-      echo "==> Installing PowerShell..."
+      step "Installing PowerShell..." 40
       ${pkgs.xvfb-run}/bin/xvfb-run --auto-servernum \
         ${pkgs.winetricks}/bin/winetricks --unattended powershell
 
-      echo "==> Downloading Native Access installer..."
+      step "Downloading Native Access..." 55
       NA_INSTALLER="/tmp/Native-Access_2.exe"
       CURL_ARGS="-L --progress-bar -o $NA_INSTALLER"
       [ -f "$NA_INSTALLER" ] && CURL_ARGS="$CURL_ARGS -z $NA_INSTALLER"
       ${pkgs.curl}/bin/curl $CURL_ARGS \
         "https://www.native-instruments.com/fileadmin/downloads/Native-Access_2.exe"
 
-      echo "==> Installing Native Access..."
+      step "Installing Native Access..." 65
       ${xvfb-dismiss}/bin/xvfb-dismiss 98 "Warning" Return \
         ${wine}/bin/wine "$NA_INSTALLER"
       ${wine}/bin/wineserver -k || true
 
-      echo "==> Installing NTKDaemon..."
+      step "Installing NTKDaemon..." 78
       NTK_INSTALLER=$(ls "$WINEPREFIX/drive_c/Program Files/Native Instruments/Native Access/resources/daemon/win/NTKDaemon "*.exe 2>/dev/null | head -1)
       if [ -z "$NTK_INSTALLER" ]; then
         echo "Error: NTKDaemon installer not found" >&2
@@ -90,15 +144,22 @@
       ${pkgs.xvfb-run}/bin/xvfb-run --auto-servernum ${wine}/bin/wine "$NTK_INSTALLER" /s
       ${wine}/bin/wineserver -k || true
 
-      echo "==> Fixing msvcp140 DLLs for Kontakt compatibility..."
+      step "Fixing msvcp140 DLLs..." 90
       ${ni-install}/bin/ni-install --fix-msvcp140
 
-      echo "==> Done. Prefix ready at $WINEPREFIX"
+      step "Done!" 100
     '';
 
     ni-launch = pkgs.writeShellScriptBin "native-access" ''
       export WINEPREFIX="$HOME/.wine-ni"
-      ${wine}/bin/wine "$WINEPREFIX/drive_c/Program Files/Common Files/Native Instruments/NTK/NTKDaemon.exe"
+
+      NTK_EXE="$WINEPREFIX/drive_c/Program Files/Common Files/Native Instruments/NTK/NTKDaemon.exe"
+      if [ ! -f "$NTK_EXE" ]; then
+        echo "==> Native Access not installed. Running setup..."
+        ${ni-setup}/bin/ni-setup --ui
+      fi
+
+      ${wine}/bin/wine "$NTK_EXE"
       ${wine}/bin/wine "$WINEPREFIX/drive_c/users/$USER/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Native Access.lnk"
     '';
 
@@ -140,7 +201,6 @@
         case "$1" in
           --kontakt8)
             shift
-            # Use provided URL or capture from browser via local HTTP server
             if [[ $# -gt 0 && "$1" != --* ]]; then
               URL="$1"; shift
             else
@@ -148,7 +208,6 @@
               URL_FILE=$(mktemp)
               EXT_DIR=$(mktemp -d)
 
-              # Generate a temporary Chrome extension that auto-sends the URL
               cat > "$EXT_DIR/manifest.json" << 'JSON'
 {
   "manifest_version": 3,
@@ -166,21 +225,16 @@ JSON
 (function poll() {
   var links = document.querySelectorAll('a[href*="Kontakt_8_Installer.zip"]');
   if (!links.length) { setTimeout(poll, 1000); return; }
-  fetch('http://localhost:$PORT', { method: 'POST', body: links[0].href });
+  fetch('http://localhost:${toString 19876}', { method: 'POST', body: links[0].href });
 })();
 JSEOF
 
-              # Start callback server
-              # Kill any leftover process on the port
               fuser -k "$PORT/tcp" 2>/dev/null || true
-
               ${pkgs.python3}/bin/python3 ${ni-url-server} "$URL_FILE" "$PORT" &
               SERVER_PID=$!
 
               echo "==> Log in to Native Instruments in the popup window."
-              echo "    The URL will be captured automatically."
 
-              # Open as a small app popup — no browser chrome, just the page
               ${pkgs.chromium}/bin/chromium \
                 --app="https://www.native-instruments.com/en/account/downloads/0e504595-40d8-4982-978e-a242f036912d" \
                 --load-extension="$EXT_DIR" \
@@ -190,7 +244,6 @@ JSEOF
                 2>/dev/null &
               BROWSER_PID=$!
 
-              # Wait for URL — exit early if browser is closed
               while kill -0 "$BROWSER_PID" 2>/dev/null; do
                 [ -s "$URL_FILE" ] && break
                 sleep 1
@@ -235,6 +288,7 @@ JSEOF
               echo "Error: Wine prefix not initialized. Run ni-setup first." >&2
               exit 1
             fi
+
             TMPDIR="$(mktemp -d)"
             trap 'rm -rf "$TMPDIR"' EXIT
 
@@ -243,37 +297,27 @@ JSEOF
               "https://aka.ms/vs/17/release/vc_redist.x64.exe" \
               -o "$TMPDIR/vc_redist.x64.exe"
 
-            echo "==> Extracting outer cabinet..."
+            echo "==> Extracting cabinet..."
             ${pkgs.cabextract}/bin/cabextract -d "$TMPDIR/stage1" "$TMPDIR/vc_redist.x64.exe" 2>/dev/null
 
-            echo "==> Locating amd64 DLL cabinet..."
             INNER_CAB=""
             for f in "$TMPDIR/stage1"/a*; do
               if ${pkgs.cabextract}/bin/cabextract -l "$f" 2>/dev/null | grep -q "msvcp140.dll_amd64"; then
-                INNER_CAB="$f"
-                break
+                INNER_CAB="$f"; break
               fi
             done
 
             if [[ -z "$INNER_CAB" ]]; then
-              echo "ERROR: Could not find inner cabinet with msvcp140.dll_amd64" >&2
+              echo "ERROR: Could not find msvcp140.dll_amd64 cabinet" >&2
               exit 1
             fi
 
-            echo "==> Extracting DLLs..."
             ${pkgs.cabextract}/bin/cabextract -d "$TMPDIR/stage2" "$INNER_CAB" 2>/dev/null
 
             SYSTEM32="$WINEPREFIX/drive_c/windows/system32"
-
             copy_dll() {
-              local src="$TMPDIR/stage2/$1"
-              local dst="$SYSTEM32/$2"
-              if [[ -f "$src" ]]; then
-                echo "==> Installing $2"
-                cp "$src" "$dst"
-              else
-                echo "WARNING: $1 not found, skipping"
-              fi
+              local src="$TMPDIR/stage2/$1" dst="$SYSTEM32/$2"
+              [[ -f "$src" ]] && { echo "==> Installing $2"; cp "$src" "$dst"; } || echo "WARNING: $1 not found"
             }
 
             copy_dll "msvcp140.dll_amd64"             "msvcp140.dll"
@@ -291,10 +335,8 @@ JSEOF
                        msvcp140_codecvt_ids concrt140 \
                        vcruntime140 vcruntime140_1 vcruntime140_threads; do
               ${pkgs.xvfb-run}/bin/xvfb-run --auto-servernum \
-                ${wine}/bin/wine reg add \
-                "HKCU\\Software\\Wine\\DllOverrides" \
-                /v "$dll" /t REG_SZ /d "native,builtin" /f \
-                2>/dev/null || true
+                ${wine}/bin/wine reg add "HKCU\\Software\\Wine\\DllOverrides" \
+                /v "$dll" /t REG_SZ /d "native,builtin" /f 2>/dev/null || true
             done
 
             echo "==> msvcp140 fix applied."
@@ -318,7 +360,21 @@ JSEOF
     packages.${system}.default = native-instruments;
 
     devShells.${system}.default = pkgs.mkShell {
-      packages = [ native-instruments wine pkgs.winetricks pkgs.xvfb-run pkgs.xdotool pkgs.curl pkgs.p7zip pkgs.unzip pkgs.cabextract pkgs.xdg-utils pkgs.python3 pkgs.chromium ];
+      packages = [
+        native-instruments
+        wine
+        pkgs.winetricks
+        pkgs.xvfb-run
+        pkgs.xdotool
+        pkgs.curl
+        pkgs.p7zip
+        pkgs.unzip
+        pkgs.cabextract
+        pkgs.xdg-utils
+        pkgs.python3
+        pkgs.chromium
+        pkgs.yad
+      ];
 
       shellHook = ''
         export WINEPREFIX="$HOME/.wine-ni"
