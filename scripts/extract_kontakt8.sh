@@ -46080,7 +46080,7 @@ fi
 # Generate Kontakt 8.json
 mkdir -p "$OUT/users/Public/Documents/Native Instruments/installed_products"
 cat > "$OUT/users/Public/Documents/Native Instruments/installed_products/Kontakt 8.json" << 'JSONEOF'
-{"ContentDir":"C:\\Program Files\\Common Files\\Native Instruments\\Kontakt 8","ContentVersion":"3.0.0","InstallDir":"C:\\Program Files\\Native Instruments\\Kontakt 8\\"}
+{"InstallDir":"C:\\Program Files\\Native Instruments\\Kontakt 8\\"}
 JSONEOF
 
 echo "Cleaning up..."
