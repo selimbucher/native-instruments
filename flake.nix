@@ -86,6 +86,8 @@ CSSEOF
         fi
       }
 
+      mkdir -p "$WINEPREFIX/drive_c"
+
       step "Initializing Wine prefix..." 5
       WINEDLLOVERRIDES="mscoree,mshtml=" ${pkgs.xvfb-run}/bin/xvfb-run --auto-servernum \
         ${wine}/bin/wineboot -i
@@ -192,7 +194,7 @@ CSSEOF
 
     ni-install = pkgs.writeShellScriptBin "ni-install" ''
       usage() {
-        echo "Usage: ni-install [--kontakt8 [<url>]] [--fix-msvcp140]"
+        echo "Usage: ni-install [--kontakt8 [<url>]] [--update-kontakt8 [<url>]] [--uninstall-kontakt8] [--fix-msvcp140]"
         exit 1
       }
 
@@ -273,8 +275,8 @@ JSEOF
             ${pkgs.curl}/bin/curl -L --progress-bar -o "$ZIP" "$URL"
 
             echo "==> Extracting..."
-            OUT="$TMP_DRIVE" PATH="${pkgs.lib.makeBinPath [ pkgs.p7zip pkgs.unzip ]}:$PATH" \
-              bash ${./scripts/extract_kontakt8.sh} "$ZIP"
+            OUT="$TMP_DRIVE" K8_CACHE="/tmp/k8_cache" PATH="${pkgs.lib.makeBinPath [ pkgs.p7zip pkgs.unzip pkgs.msitools ]}:$PATH" \
+              ${pkgs.python3}/bin/python3 ${./scripts/extract_kontakt8.py} "$ZIP"
 
             echo "==> Copying to Wine prefix..."
             cp -r "$TMP_DRIVE/." "$WINEPREFIX/drive_c/"
@@ -345,6 +347,53 @@ JSEOF
             echo "==> msvcp140 fix applied."
             ;;
 
+          --update-kontakt8)
+            shift
+            if [[ $# -gt 0 && "$1" != --* ]]; then
+              URL="$1"; shift
+            else
+              URL=""
+            fi
+
+            ZIP="/tmp/Kontakt_8_Installer.zip"
+
+            if [[ -n "$URL" ]]; then
+              echo "==> Downloading Kontakt 8..."
+              ${pkgs.curl}/bin/curl -L --progress-bar -o "$ZIP" "$URL"
+              # Invalidate extraction cache since we have a new zip
+              rm -rf "$CACHE"
+            elif [[ ! -f "$ZIP" ]]; then
+              echo "Error: No installer zip found at $ZIP. Provide a URL or place the zip there." >&2
+              exit 1
+            fi
+
+            TMP_DRIVE="/tmp/k8_drive_c"
+            rm -rf "$TMP_DRIVE"
+
+            echo "==> Extracting (update, overwrite enabled)..."
+            K8_UPDATE=1 OUT="$TMP_DRIVE" K8_CACHE="$CACHE"               PATH="${pkgs.lib.makeBinPath [ pkgs.p7zip pkgs.unzip pkgs.msitools ]}:$PATH"               ${pkgs.python3}/bin/python3 ${./scripts/extract_kontakt8.py} "$ZIP"
+
+            echo "==> Copying to Wine prefix..."
+            cp -r "$TMP_DRIVE/." "$WINEPREFIX/drive_c/"
+
+            echo "==> Cleaning up..."
+            rm -rf "$TMP_DRIVE" "$ZIP"
+
+            echo "==> Kontakt 8 updated."
+            ;;
+
+          --uninstall-kontakt8)
+            shift
+            echo "==> Removing Kontakt 8 files from Wine prefix..."
+
+            rm -rf "$WINEPREFIX/drive_c/Program Files/Native Instruments/Kontakt 8"
+            rm -rf "$WINEPREFIX/drive_c/Program Files/Common Files/Native Instruments/Kontakt 8"
+            rm -rf "$WINEPREFIX/drive_c/Program Files/Common Files/VST3/Kontakt 8.vst3"
+            rm -f  "$WINEPREFIX/drive_c/users/Public/Documents/Native Instruments/installed_products/Kontakt 8.json"
+
+            echo "==> Kontakt 8 uninstalled."
+            ;;
+
           *) usage ;;
         esac
       done
@@ -377,6 +426,7 @@ JSEOF
         pkgs.python3
         pkgs.chromium
         pkgs.yad
+        pkgs.msitools
       ];
 
       shellHook = ''
