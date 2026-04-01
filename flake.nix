@@ -231,6 +231,10 @@ JSEOF
 
           --fix-msvcp140)
             shift
+            if [ ! -d "$WINEPREFIX/drive_c/windows/system32" ]; then
+              echo "Error: Wine prefix not initialized. Run ni-setup first." >&2
+              exit 1
+            fi
             TMPDIR="$(mktemp -d)"
             trap 'rm -rf "$TMPDIR"' EXIT
 
