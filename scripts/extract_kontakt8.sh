@@ -8,7 +8,7 @@ TMP="/tmp/k8_extract"
 
 echo "Extracting $ZIP..."
 mkdir -p "$TMP"
-unzip -q "$ZIP" -d "$TMP"
+unzip -qo "$ZIP" -d "$TMP"
 
 echo "Extracting installer exe..."
 EXE=$(find "$TMP" -name "*.exe" | head -1)
