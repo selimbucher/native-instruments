@@ -90,7 +90,7 @@ else:
         if old_dir != str(CACHE):
             shutil.rmtree(old_dir, ignore_errors=True)
     shutil.rmtree(CACHE, ignore_errors=True)
-    CACHE.mkdir(parents=True)
+    CACHE.mkdir(parents=True, exist_ok=True)
     print("==> Extracting zip...")
     with zipfile.ZipFile(ZIP) as zf:
         zf.extractall(CACHE / "zip")
