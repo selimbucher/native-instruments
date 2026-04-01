@@ -275,10 +275,16 @@ JSEOF
             ${pkgs.curl}/bin/curl -L --progress-bar -o "$ZIP" "$URL"
 
             echo "==> Extracting..."
-            OUT="$TMP_DRIVE" K8_CACHE="/tmp/k8_cache" PATH="${pkgs.lib.makeBinPath [ pkgs.p7zip pkgs.unzip pkgs.msitools ]}:$PATH" \
+            OUT="$TMP_DRIVE" PATH="${pkgs.lib.makeBinPath [ pkgs.p7zip pkgs.unzip pkgs.msitools ]}:$PATH" \
               ${pkgs.python3}/bin/python3 ${./scripts/extract_kontakt8.py} "$ZIP"
 
+            if [[ ! -d "$TMP_DRIVE" ]]; then
+              echo "Error: extraction failed, aborting copy." >&2
+              exit 1
+            fi
+
             echo "==> Copying to Wine prefix..."
+            mkdir -p "$WINEPREFIX/drive_c"
             cp -r "$TMP_DRIVE/." "$WINEPREFIX/drive_c/"
 
             echo "==> Cleaning up..."
@@ -371,9 +377,22 @@ JSEOF
             rm -rf "$TMP_DRIVE"
 
             echo "==> Extracting (update, overwrite enabled)..."
-            K8_UPDATE=1 OUT="$TMP_DRIVE" K8_CACHE="$CACHE"               PATH="${pkgs.lib.makeBinPath [ pkgs.p7zip pkgs.unzip pkgs.msitools ]}:$PATH"               ${pkgs.python3}/bin/python3 ${./scripts/extract_kontakt8.py} "$ZIP"
+            K8_UPDATE=1 OUT="$TMP_DRIVE" \
+              PATH="${pkgs.lib.makeBinPath [ pkgs.p7zip pkgs.unzip pkgs.msitools ]}:$PATH" \
+              ${pkgs.python3}/bin/python3 ${./scripts/extract_kontakt8.py} "$ZIP"
+
+            if [[ ! -d "$TMP_DRIVE" ]]; then
+              echo "Error: extraction failed, aborting copy." >&2
+              exit 1
+            fi
+
+            echo "==> Removing old Kontakt 8 files..."
+            rm -rf "$WINEPREFIX/drive_c/Program Files/Native Instruments/Kontakt 8"
+            rm -rf "$WINEPREFIX/drive_c/Program Files/Common Files/Native Instruments/Kontakt 8"
+            rm -rf "$WINEPREFIX/drive_c/Program Files/Common Files/VST3/Kontakt 8.vst3"
 
             echo "==> Copying to Wine prefix..."
+            mkdir -p "$WINEPREFIX/drive_c"
             cp -r "$TMP_DRIVE/." "$WINEPREFIX/drive_c/"
 
             echo "==> Cleaning up..."
