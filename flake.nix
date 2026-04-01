@@ -479,6 +479,8 @@ JSEOF
       postBuild = ''
         mkdir -p $out/share/applications
         cp ${./data/native-access.desktop} $out/share/applications/native-access.desktop
+        mkdir -p $out/share/icons/hicolor/scalable/apps
+        cp ${./data/native-access.svg} $out/share/icons/hicolor/scalable/apps/native-access.svg
       '';
     };
 
