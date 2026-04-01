@@ -102,9 +102,33 @@
       ${wine}/bin/wine "$WINEPREFIX/drive_c/users/$USER/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Native Access.lnk"
     '';
 
+    ni-url-server = pkgs.writeText "ni-url-server.py" ''
+      import http.server, sys, os
+      url_file = sys.argv[1]
+      port     = int(sys.argv[2])
+      class Handler(http.server.BaseHTTPRequestHandler):
+          def do_OPTIONS(self):
+              self.send_response(200)
+              self.send_header('Access-Control-Allow-Origin', '*')
+              self.send_header('Access-Control-Allow-Methods', 'POST')
+              self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+              self.end_headers()
+          def do_POST(self):
+              url = self.rfile.read(int(self.headers.get('Content-Length', 0))).decode().strip()
+              self.send_response(200)
+              self.send_header('Access-Control-Allow-Origin', '*')
+              self.end_headers()
+              open(url_file, 'w').write(url)
+              os._exit(0)
+          def log_message(self, *args): pass
+      class ReuseServer(http.server.HTTPServer):
+          allow_reuse_address = True
+      ReuseServer(('localhost', port), Handler).serve_forever()
+    '';
+
     ni-install = pkgs.writeShellScriptBin "ni-install" ''
       usage() {
-        echo "Usage: ni-install [--kontakt8 <url>] [--fix-msvcp140]"
+        echo "Usage: ni-install [--kontakt8 [<url>]] [--fix-msvcp140]"
         exit 1
       }
 
@@ -115,7 +139,77 @@
       while [[ $# -gt 0 ]]; do
         case "$1" in
           --kontakt8)
-            URL="$2"; shift 2
+            shift
+            # Use provided URL or capture from browser via local HTTP server
+            if [[ $# -gt 0 && "$1" != --* ]]; then
+              URL="$1"; shift
+            else
+              PORT=19876
+              URL_FILE=$(mktemp)
+              EXT_DIR=$(mktemp -d)
+
+              # Generate a temporary Chrome extension that auto-sends the URL
+              cat > "$EXT_DIR/manifest.json" << 'JSON'
+{
+  "manifest_version": 3,
+  "name": "NI URL Capture",
+  "version": "1.0",
+  "content_scripts": [{
+    "matches": ["https://www.native-instruments.com/*/account/downloads/*"],
+    "js": ["capture.js"],
+    "run_at": "document_idle"
+  }]
+}
+JSON
+
+              cat > "$EXT_DIR/capture.js" << JSEOF
+(function poll() {
+  var links = document.querySelectorAll('a[href*="Kontakt_8_Installer.zip"]');
+  if (!links.length) { setTimeout(poll, 1000); return; }
+  fetch('http://localhost:$PORT', { method: 'POST', body: links[0].href });
+})();
+JSEOF
+
+              # Start callback server
+              # Kill any leftover process on the port
+              fuser -k "$PORT/tcp" 2>/dev/null || true
+
+              ${pkgs.python3}/bin/python3 ${ni-url-server} "$URL_FILE" "$PORT" &
+              SERVER_PID=$!
+
+              echo "==> Log in to Native Instruments in the popup window."
+              echo "    The URL will be captured automatically."
+
+              # Open as a small app popup — no browser chrome, just the page
+              ${pkgs.chromium}/bin/chromium \
+                --app="https://www.native-instruments.com/en/account/downloads/0e504595-40d8-4982-978e-a242f036912d" \
+                --load-extension="$EXT_DIR" \
+                --disable-extensions-except="$EXT_DIR" \
+                --no-first-run \
+                --no-default-browser-check \
+                2>/dev/null &
+              BROWSER_PID=$!
+
+              # Wait for URL — exit early if browser is closed
+              while kill -0 "$BROWSER_PID" 2>/dev/null; do
+                [ -s "$URL_FILE" ] && break
+                sleep 1
+              done
+
+              kill "$BROWSER_PID" 2>/dev/null || true
+              kill "$SERVER_PID" 2>/dev/null || true
+              rm -rf "$EXT_DIR"
+
+              URL=$(cat "$URL_FILE")
+              rm -f "$URL_FILE"
+
+              if [ -z "$URL" ]; then
+                echo "==> Browser closed before URL was received. Aborting." >&2
+                exit 1
+              fi
+              echo "==> URL captured."
+            fi
+
             ZIP="/tmp/Kontakt_8_Installer.zip"
             TMP_DRIVE="/tmp/k8_drive_c"
 
@@ -220,7 +314,7 @@
     packages.${system}.default = native-instruments;
 
     devShells.${system}.default = pkgs.mkShell {
-      packages = [ native-instruments wine pkgs.winetricks pkgs.xvfb-run pkgs.xdotool pkgs.curl pkgs.p7zip pkgs.unzip pkgs.cabextract ];
+      packages = [ native-instruments wine pkgs.winetricks pkgs.xvfb-run pkgs.xdotool pkgs.curl pkgs.p7zip pkgs.unzip pkgs.cabextract pkgs.xdg-utils pkgs.python3 pkgs.chromium ];
 
       shellHook = ''
         export WINEPREFIX="$HOME/.wine-ni"
