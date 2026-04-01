@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ZIP="${1:-$SCRIPT_DIR/Kontakt_8_Installer.zip}"
-OUT="$SCRIPT_DIR/drive_c"
+OUT="${OUT:-/tmp/k8_drive_c}"
 TMP="/tmp/k8_extract"
 
 echo "Extracting $ZIP..."

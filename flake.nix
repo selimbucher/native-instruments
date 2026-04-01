@@ -90,6 +90,9 @@
       ${pkgs.xvfb-run}/bin/xvfb-run --auto-servernum ${wine}/bin/wine "$NTK_INSTALLER" /s
       ${wine}/bin/wineserver -k || true
 
+      echo "==> Fixing msvcp140 DLLs for Kontakt compatibility..."
+      ${ni-install}/bin/ni-install --fix-msvcp140
+
       echo "==> Done. Prefix ready at $WINEPREFIX"
     '';
 
@@ -99,9 +102,114 @@
       ${wine}/bin/wine "$WINEPREFIX/drive_c/users/$USER/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Native Access.lnk"
     '';
 
+    ni-install = pkgs.writeShellScriptBin "ni-install" ''
+      usage() {
+        echo "Usage: ni-install [--kontakt8 <url>] [--fix-msvcp140]"
+        exit 1
+      }
+
+      [ $# -eq 0 ] && usage
+
+      export WINEPREFIX="$HOME/.wine-ni"
+
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --kontakt8)
+            URL="$2"; shift 2
+            ZIP="/tmp/Kontakt_8_Installer.zip"
+            TMP_DRIVE="/tmp/k8_drive_c"
+
+            echo "==> Downloading Kontakt 8..."
+            ${pkgs.curl}/bin/curl -L --progress-bar -o "$ZIP" "$URL"
+
+            echo "==> Extracting..."
+            OUT="$TMP_DRIVE" PATH="${pkgs.lib.makeBinPath [ pkgs.p7zip pkgs.unzip ]}:$PATH" \
+              bash ${./scripts/extract_kontakt8.sh} "$ZIP"
+
+            echo "==> Copying to Wine prefix..."
+            cp -r "$TMP_DRIVE/." "$WINEPREFIX/drive_c/"
+
+            echo "==> Cleaning up..."
+            rm -rf "$TMP_DRIVE" "$ZIP"
+
+            echo "==> Kontakt 8 installed."
+            ;;
+
+          --fix-msvcp140)
+            shift
+            TMPDIR="$(mktemp -d)"
+            trap 'rm -rf "$TMPDIR"' EXIT
+
+            echo "==> Downloading VC++ 2022 x64 redistributable..."
+            ${pkgs.curl}/bin/curl -L --progress-bar \
+              "https://aka.ms/vs/17/release/vc_redist.x64.exe" \
+              -o "$TMPDIR/vc_redist.x64.exe"
+
+            echo "==> Extracting outer cabinet..."
+            ${pkgs.cabextract}/bin/cabextract -d "$TMPDIR/stage1" "$TMPDIR/vc_redist.x64.exe" 2>/dev/null
+
+            echo "==> Locating amd64 DLL cabinet..."
+            INNER_CAB=""
+            for f in "$TMPDIR/stage1"/a*; do
+              if ${pkgs.cabextract}/bin/cabextract -l "$f" 2>/dev/null | grep -q "msvcp140.dll_amd64"; then
+                INNER_CAB="$f"
+                break
+              fi
+            done
+
+            if [[ -z "$INNER_CAB" ]]; then
+              echo "ERROR: Could not find inner cabinet with msvcp140.dll_amd64" >&2
+              exit 1
+            fi
+
+            echo "==> Extracting DLLs..."
+            ${pkgs.cabextract}/bin/cabextract -d "$TMPDIR/stage2" "$INNER_CAB" 2>/dev/null
+
+            SYSTEM32="$WINEPREFIX/drive_c/windows/system32"
+
+            copy_dll() {
+              local src="$TMPDIR/stage2/$1"
+              local dst="$SYSTEM32/$2"
+              if [[ -f "$src" ]]; then
+                echo "==> Installing $2"
+                cp "$src" "$dst"
+              else
+                echo "WARNING: $1 not found, skipping"
+              fi
+            }
+
+            copy_dll "msvcp140.dll_amd64"             "msvcp140.dll"
+            copy_dll "msvcp140_1.dll_amd64"           "msvcp140_1.dll"
+            copy_dll "msvcp140_2.dll_amd64"           "msvcp140_2.dll"
+            copy_dll "msvcp140_atomic_wait.dll_amd64" "msvcp140_atomic_wait.dll"
+            copy_dll "msvcp140_codecvt_ids.dll_amd64" "msvcp140_codecvt_ids.dll"
+            copy_dll "concrt140.dll_amd64"            "concrt140.dll"
+            copy_dll "vcruntime140.dll_amd64"         "vcruntime140.dll"
+            copy_dll "vcruntime140_1.dll_amd64"       "vcruntime140_1.dll"
+            copy_dll "vcruntime140_threads.dll_amd64" "vcruntime140_threads.dll"
+
+            echo "==> Setting DLL overrides..."
+            for dll in msvcp140 msvcp140_1 msvcp140_2 msvcp140_atomic_wait \
+                       msvcp140_codecvt_ids concrt140 \
+                       vcruntime140 vcruntime140_1 vcruntime140_threads; do
+              ${pkgs.xvfb-run}/bin/xvfb-run --auto-servernum \
+                ${wine}/bin/wine reg add \
+                "HKCU\\Software\\Wine\\DllOverrides" \
+                /v "$dll" /t REG_SZ /d "native,builtin" /f \
+                2>/dev/null || true
+            done
+
+            echo "==> msvcp140 fix applied."
+            ;;
+
+          *) usage ;;
+        esac
+      done
+    '';
+
     native-instruments = pkgs.symlinkJoin {
       name = "native-instruments";
-      paths = [ ni-setup ni-launch xvfb-dismiss ];
+      paths = [ ni-setup ni-launch ni-install xvfb-dismiss ];
       postBuild = ''
         mkdir -p $out/share/applications
         cp ${./data/native-access.desktop} $out/share/applications/native-access.desktop
@@ -112,7 +220,7 @@
     packages.${system}.default = native-instruments;
 
     devShells.${system}.default = pkgs.mkShell {
-      packages = [ native-instruments wine pkgs.winetricks pkgs.xvfb-run pkgs.xdotool pkgs.curl ];
+      packages = [ native-instruments wine pkgs.winetricks pkgs.xvfb-run pkgs.xdotool pkgs.curl pkgs.p7zip pkgs.unzip pkgs.cabextract ];
 
       shellHook = ''
         export WINEPREFIX="$HOME/.wine-ni"
