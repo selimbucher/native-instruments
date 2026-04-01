@@ -206,6 +206,12 @@ CSSEOF
         case "$1" in
           --kontakt8)
             shift
+            K8_EXE="$WINEPREFIX/drive_c/Program Files/Native Instruments/Kontakt 8/Kontakt 8.exe"
+            if [ -f "$K8_EXE" ]; then
+              echo "Kontakt 8 is already installed. Use ni-install --update-kontakt8 to update."
+              exit 0
+            fi
+
             if [[ $# -gt 0 && "$1" != --* ]]; then
               URL="$1"; shift
             else
@@ -366,11 +372,60 @@ JSEOF
             if [[ -n "$URL" ]]; then
               echo "==> Downloading Kontakt 8..."
               ${pkgs.curl}/bin/curl -L --progress-bar -o "$ZIP" "$URL"
-              # Invalidate extraction cache since we have a new zip
-              rm -rf "$CACHE"
             elif [[ ! -f "$ZIP" ]]; then
-              echo "Error: No installer zip found at $ZIP. Provide a URL or place the zip there." >&2
-              exit 1
+              PORT=19876
+              URL_FILE=$(mktemp)
+              EXT_DIR=$(mktemp -d)
+
+              cat > "$EXT_DIR/manifest.json" << 'JSON'
+{
+  "manifest_version": 3,
+  "name": "NI URL Capture",
+  "version": "1.0",
+  "content_scripts": [{
+    "matches": ["https://www.native-instruments.com/*/account/downloads/*"],
+    "js": ["capture.js"],
+    "run_at": "document_idle"
+  }]
+}
+JSON
+
+              cat > "$EXT_DIR/capture.js" << JSEOF
+(function poll() {
+  var links = document.querySelectorAll('a[href*="Kontakt_8_Installer.zip"]');
+  if (!links.length) { setTimeout(poll, 1000); return; }
+  fetch('http://localhost:${toString 19876}', { method: 'POST', body: links[0].href });
+})();
+JSEOF
+
+              fuser -k "$PORT/tcp" 2>/dev/null || true
+              ${pkgs.python3}/bin/python3 ${ni-url-server} "$URL_FILE" "$PORT" &
+              SERVER_PID=$!
+
+              echo "==> Log in to Native Instruments in the popup window."
+
+              ${pkgs.chromium}/bin/chromium                 --app="https://www.native-instruments.com/en/account/downloads/0e504595-40d8-4982-978e-a242f036912d"                 --load-extension="$EXT_DIR"                 --disable-extensions-except="$EXT_DIR"                 --no-first-run                 --no-default-browser-check                 2>/dev/null &
+              BROWSER_PID=$!
+
+              while kill -0 "$BROWSER_PID" 2>/dev/null; do
+                [ -s "$URL_FILE" ] && break
+                sleep 1
+              done
+
+              kill "$BROWSER_PID" 2>/dev/null || true
+              kill "$SERVER_PID" 2>/dev/null || true
+              rm -rf "$EXT_DIR"
+
+              URL=$(cat "$URL_FILE")
+              rm -f "$URL_FILE"
+
+              if [ -z "$URL" ]; then
+                echo "==> Browser closed before URL was received. Aborting." >&2
+                exit 1
+              fi
+              echo "==> URL captured."
+              echo "==> Downloading Kontakt 8..."
+              ${pkgs.curl}/bin/curl -L --progress-bar -o "$ZIP" "$URL"
             fi
 
             TMP_DRIVE="/tmp/k8_drive_c"
