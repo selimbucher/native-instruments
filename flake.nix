@@ -114,6 +114,7 @@ CSSEOF
           mkdir -p "$link"
         fi
       done
+      mkdir -p "$WINEPREFIX/drive_c/users/Public/Downloads"
 
       step "Installing vcrun2022..." 25
       ${pkgs.xvfb-run}/bin/xvfb-run --auto-servernum \
