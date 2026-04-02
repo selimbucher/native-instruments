@@ -156,6 +156,30 @@ CSSEOF
     ni-launch = pkgs.writeShellScriptBin "native-access" ''
       export WINEPREFIX="$HOME/.wine-ni"
 
+      if [[ "''${1:-}" == "--reinstall" ]]; then
+        echo ""
+        echo "Warning: This will wipe your Wine prefix at $WINEPREFIX."
+        echo "All installed libraries and instruments stored there will be removed."
+        echo ""
+        read -r -p "Type YES to continue: " CONFIRM
+        if [[ "$CONFIRM" != "YES" ]]; then
+          echo "Aborted."
+          exit 0
+        fi
+
+        echo "==> Killing Wine session..."
+        WINEPREFIX="$WINEPREFIX" ${wine}/bin/wineserver -k 2>/dev/null || true
+        ${wine}/bin/wineserver -k 2>/dev/null || true
+        sleep 1
+
+        echo "==> Removing Wine prefix..."
+        rm -rf "$WINEPREFIX"
+
+        echo "==> Running setup..."
+        ${ni-setup}/bin/ni-setup --ui
+        exit 0
+      fi
+
       NTK_EXE="$WINEPREFIX/drive_c/Program Files/Common Files/Native Instruments/NTK/NTKDaemon.exe"
       if [ ! -f "$NTK_EXE" ]; then
         echo "==> Native Access not installed. Running setup..."
@@ -285,6 +309,9 @@ JSEOF
               echo "Error: extraction failed, aborting copy." >&2
               exit 1
             fi
+
+            WINEPREFIX="$WINEPREFIX" ${wine}/bin/wineserver -k 2>/dev/null || true
+
 
             echo "==> Copying to Wine prefix..."
             mkdir -p "$WINEPREFIX/drive_c"
@@ -436,6 +463,16 @@ JSEOF
             if [[ ! -d "$TMP_DRIVE" ]]; then
               echo "Error: extraction failed, aborting copy." >&2
               exit 1
+            fi
+
+            # Wait for Native Access to close before copying
+            if pgrep -f "Native Access" > /dev/null 2>&1; then
+              echo "==> Native Access is running. Please close it before continuing."
+              while pgrep -f "Native Access" > /dev/null 2>&1; do
+                sleep 2
+              done
+              echo "==> Native Access closed, waiting for Wine to settle..."
+              sleep 2
             fi
 
             echo "==> Removing old Kontakt 8 files..."
