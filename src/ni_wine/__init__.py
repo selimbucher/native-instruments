@@ -1,3 +1,3 @@
 """ni-wine — Native Instruments software under Wine on Linux."""
 
-__version__ = "2.1.2"
+__version__ = "2.1.3"

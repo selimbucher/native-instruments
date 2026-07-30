@@ -11,7 +11,7 @@ from .msvcp140 import fix_msvcp140
 from .desktop import ensure_url_handler
 from .ui import Progress
 from .util import die, download, info, warn
-from .wine import Wine, apply_prefix_tweaks, auto_dismiss, hidden_display
+from .wine import Wine, apply_prefix_tweaks, hidden_display
 
 # Windows special folders Wine symlinks into $HOME; we replace them with
 # real directories so installers can't touch the actual home folder.
@@ -68,10 +68,12 @@ def run_setup(prefix: Path, *, ui: bool = False) -> None:
             hidden_display() as display:
 
         progress.step("Initializing Wine prefix...", 5)
+        # DISPLAY="" keeps wineboot's "updating configuration" dialog off
+        # the user's desktop when no hidden display is available.
         wine.run(
             ["wineboot", "-i"],
             extra_env={"WINEDLLOVERRIDES": "mscoree,mshtml="},
-            display=display,
+            display=display or "",
         )
 
         progress.step("Applying prefix tweaks...", 12)
@@ -94,9 +96,10 @@ def run_setup(prefix: Path, *, ui: bool = False) -> None:
         )
 
         progress.step("Installing Native Access...", 65)
-        # The installer pops a compatibility warning; auto-press Return on it.
-        with auto_dismiss(display, "Warning", "Return"):
-            wine.run([str(installer)], display=display)
+        # NSIS silent mode: no wizard, and the compatibility warning dialog
+        # is skipped.  The payload still needs a window driver (fails with
+        # DISPLAY=""), so a display — hidden or real — stays attached.
+        wine.run([str(installer), "/S"], display=display)
         wine.kill_server()
 
         progress.step("Installing NTKDaemon...", 78)

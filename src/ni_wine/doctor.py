@@ -69,7 +69,7 @@ def _dependency_checks() -> list[Check]:
         ("msidump", ("msidump",), True, "reads MSI tables (package: msitools)"),
         ("pgrep", ("pgrep",), True, "process checks (package: procps)"),
         ("Xvfb", ("Xvfb",), True, "hides installer windows during setup"),
-        ("xdotool", ("xdotool",), True, "auto-dismisses installer dialogs"),
+        ("xdotool", ("xdotool",), True, "repositions off-screen windows"),
         ("yad/zenity", ("yad", "zenity"), True, "graphical setup progress"),
     ]
     checks = []

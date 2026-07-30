@@ -6,7 +6,6 @@ import contextlib
 import os
 import shutil
 import subprocess
-import threading
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -185,54 +184,6 @@ def hidden_display(size: str = "1280x1024x24") -> Iterator[str | None]:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             proc.kill()
-
-
-@contextlib.contextmanager
-def auto_dismiss(display: str | None, window_name: str, key: str) -> Iterator[None]:
-    """While the body runs, press *key* on any window matching *window_name*.
-
-    Used to wave through the installer's known blocking dialog.  Requires
-    xdotool; without it (or without any X display) the user clicks manually.
-    """
-    xdotool = shutil.which("xdotool")
-    if not xdotool:
-        warn("xdotool not found: dismiss installer dialogs manually")
-        yield
-        return
-    if display is None and not os.environ.get("DISPLAY"):
-        yield
-        return
-
-    stop = threading.Event()
-
-    def press_loop() -> None:
-        env = os.environ.copy()
-        if display is not None:
-            env["DISPLAY"] = display
-        while not stop.is_set():
-            found = subprocess.run(
-                [xdotool, "search", "--name", window_name],
-                env=env,
-                capture_output=True,
-                text=True,
-            )
-            window_ids = found.stdout.split()
-            if window_ids:
-                subprocess.run(
-                    [xdotool, "key", "--window", window_ids[0], key],
-                    env=env,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            stop.wait(0.5)
-
-    thread = threading.Thread(target=press_loop, daemon=True)
-    thread.start()
-    try:
-        yield
-    finally:
-        stop.set()
-        thread.join(timeout=2)
 
 
 # --- Prefix tweaks ---------------------------------------------------------

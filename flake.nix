@@ -30,7 +30,7 @@
 
       ni-wine = pkgs.python3Packages.buildPythonApplication {
         pname = "ni-wine";
-        version = "2.1.2";
+        version = "2.1.3";
         pyproject = true;
         src = ./.;
         build-system = [ pkgs.python3Packages.setuptools ];
