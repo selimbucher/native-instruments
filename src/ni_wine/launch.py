@@ -231,7 +231,14 @@ def run_reinstall(prefix: Path, *, assume_yes: bool = False) -> None:
             return
 
     info("killing Wine session...")
-    Wine(prefix).kill_server()
+    wine = Wine(prefix)
+    wine.kill_server()
+    # Wait until wineserver has fully exited: it rewrites the registry
+    # files on shutdown, which would resurrect parts of the deleted prefix.
+    try:
+        wine.wait_server()
+    except subprocess.TimeoutExpired:
+        die("wine processes did not exit — close them and retry")
 
     info("removing Wine prefix...")
     guarded_rmtree(prefix)

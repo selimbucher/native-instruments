@@ -107,3 +107,7 @@ def guarded_rmtree(path: Path) -> None:
     if len(resolved.parts) < 3:
         raise RuntimeError(f"refusing to delete {resolved}: path too shallow")
     shutil.rmtree(resolved, ignore_errors=True)
+    if resolved.exists():
+        # A partial wipe (e.g. files still held open by a live process) must
+        # not pass silently: setup on top of prefix remnants breaks Wine.
+        raise RuntimeError(f"failed to fully delete {resolved}")
