@@ -80,9 +80,10 @@ def _dependency_checks() -> list[Check]:
         )
     browser = probe_browser()
     checks.append(Check(
-        "chromium-family browser",
-        bool(browser),
-        browser or "not found (captures download URLs from the NI website)",
+        "web browser (chromium- or firefox-family)",
+        browser is not None,
+        browser[1] if browser else
+        "not found (captures download URLs from the NI website)",
     ))
     return checks
 

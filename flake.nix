@@ -10,8 +10,9 @@
       wine = pkgs.wineWow64Packages.staging;
 
       # Tools ni-wine executes at runtime.  The user's own browser (earlier
-      # on PATH) is preferred by the probe; chromium is the guaranteed
-      # fallback for the download-URL capture.
+      # on PATH) is preferred by the probe — chromium- and firefox-family
+      # both work for the download-URL capture; firefox is the guaranteed
+      # fallback.
       runtimePath = pkgs.lib.makeBinPath [
         wine
         pkgs.winetricks
@@ -24,12 +25,12 @@
         pkgs.yad
         pkgs.xdg-utils
         pkgs.desktop-file-utils
-        pkgs.chromium
+        pkgs.firefox
       ];
 
       ni-wine = pkgs.python3Packages.buildPythonApplication {
         pname = "ni-wine";
-        version = "2.0.0";
+        version = "2.1.0";
         pyproject = true;
         src = ./.;
         build-system = [ pkgs.python3Packages.setuptools ];

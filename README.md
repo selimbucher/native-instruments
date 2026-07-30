@@ -27,7 +27,7 @@ Runtime dependencies (the CLI itself is pure Python ≥ 3.11 with no pip package
 | Xvfb | hides installer windows during setup |
 | xdotool | auto-dismisses installer dialogs |
 | zenity or yad | graphical setup progress |
-| a Chromium-family browser | captures NI download URLs (your own browser is preferred; chromium works) |
+| a Chromium- or Firefox-family browser | captures NI download URLs |
 
 ### Debian / Ubuntu
 
@@ -79,9 +79,8 @@ Every command supports `--help`.
 For `kontakt8 install`/`update` without a URL, a browser window opens on the
 NI downloads page; log in and the download link is captured automatically
 (the browser uses its own profile under `~/.local/state/ni-wine`, so your
-login is remembered for next time). If the browser asks to *"access other
-apps and services on this device"*, click **Allow** — that is how the
-download link reaches ni-wine.
+login is remembered for next time). If the browser asks to access other
+apps and services on this device, click Allow.
 
 Environment: `NI_WINE_PREFIX` (prefix location, default `~/.wine-ni`),
 `WINE` (wine binary override), `NI_WINE_DEBUG` (keep Wine debug output).
