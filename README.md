@@ -1,35 +1,20 @@
-# ni-wine
+# Native Access & Kontakt 8 on Linux
 
 Run [Native Access](https://www.native-instruments.com/en/specials/native-access-2/)
-and Native Instruments products under Wine on Linux — on any distro.
+and Native Instruments products under Wine on Linux. Includes a CLI-based install for Kontakt 8, whose official installer doesn't work under Wine.
 
 ![Native Access running under Wine on Linux](docs/screenshot.png)
 
-A single stdlib-only Python CLI replaces the pile of shell scripts this
-project started as. It knows the Wine-specific traps and fixes them for you:
-
-- **One-command setup**: dedicated Wine prefix (`~/.wine-ni`), vcrun2022,
-  PowerShell, Native Access, NTKDaemon, and the msvcp140 DLL fix — installer
-  windows hidden on a virtual display, dialogs auto-dismissed.
-- **No floating tray window**: Wine's standalone systray window (useless on
-  Hyprland & friends) is disabled via the registry, matched to your Wine
-  version's mechanism.
-- **Working browser login**: registers the `native-access://` URL scheme on
-  both the Wine side (NA's installer registers a broken literal
-  `${product.uri.scheme}`) and the Linux side (`x-scheme-handler` +
-  `xdg-mime`), so the login callback actually reaches the app. `ni doctor
-  --fix` can additionally pre-authorize the NI login origins in your
-  Chromium-family browser so it never prompts.
-- **Faster launches**: pre-starts NTKDaemon (otherwise NA silently
-  *reinstalls the daemon on every launch* — Wine's `wmic` can't answer its
-  version probe), and cleans up stale self-update downloads (~370 MB).
+- **One-command setup**: dedicated Wine prefix (`~/.wine-ni`), automaticly tweaks Wine and applies experimental patches to fix most issues.
 - **Kontakt 8 without the broken installer**: extracts the payload from the
-  official installer by replaying its MSI file tables, and can fetch the
-  authenticated download URL for you via a throwaway browser extension.
+  official installer by manually replaying its MSI file tables, and it fetches the
+  authenticated download URL for you.
+
+**This repository does NOT contain, grant access to, or distribute any software from Native Instruments in any way.** It only provides scripts and instructions for installing software you have legitimately obtained from Native Instruments and you need your own account to download and use Plugins and Instruments.
 
 ## Install
 
-Runtime dependencies (the CLI itself is pure Python ≥ 3.11, no pip packages):
+Runtime dependencies (the CLI itself is pure Python ≥ 3.11 with no pip packages):
 
 | dependency | required | purpose |
 |---|---|---|
@@ -53,26 +38,11 @@ sudo apt install winetricks cabextract 7zip msitools xvfb xdotool zenity procps 
 pipx install git+https://github.com/<you>/native-instruments
 ```
 
-### Fedora
-
-```sh
-# Fedora's wine already carries staging patches.
-sudo dnf install wine winetricks cabextract 7zip msitools xorg-x11-server-Xvfb xdotool zenity procps-ng pipx
-pipx install git+https://github.com/<you>/native-instruments
-```
-
 ### Arch
 
 ```sh
 # Arch's wine/wine-staging are new-WoW64 builds — no multilib needed.
 sudo pacman -S wine-staging winetricks cabextract 7zip msitools xorg-server-xvfb xdotool zenity python-pipx
-pipx install git+https://github.com/<you>/native-instruments
-```
-
-### openSUSE Tumbleweed
-
-```sh
-sudo zypper install wine-staging winetricks cabextract 7zip msitools xorg-x11-server-Xvfb xdotool zenity python3-pipx
 pipx install git+https://github.com/<you>/native-instruments
 ```
 
@@ -83,10 +53,7 @@ nix profile install github:<you>/native-instruments
 # or add the flake's packages.x86_64-linux.default to your system config
 ```
 
-The Nix package wraps all required tools into `PATH`; on other distros the
-CLI probes the system. After installing, run `ni doctor` to verify, and
-`ni doctor --fix` to finish desktop integration (launcher entry, icon, URL
-handler).
+A desktop entry for Native Acess is installed with this package. On first launch, it will set up the Wine prefix and install Native Acess.
 
 ## Usage
 
@@ -116,27 +83,12 @@ Environment: `NI_WINE_PREFIX` (prefix location, default `~/.wine-ni`),
 
 ## Offline behavior
 
-Native Access has **no offline mode by design** — its product list requires
-a live `api.native-instruments.com` call, so offline it will load to
-"Loading products failed". That is NA architecture, not a Wine or ni-wine
-bug. ni-wine detects the situation and tells you up front instead of
+Native Access has no offline mode. ni-wine detects the situation and tells you up front instead of
 letting the app spin. Installed instruments and plugins keep working
-offline (activations are cached locally).
+offline.
 
 ## Troubleshooting
 
 `ni doctor` diagnoses the common failure modes; `ni doctor --fix` repairs
 the repairable ones. Native Access's own logs live at
 `~/.wine-ni/drive_c/users/Public/Documents/Native Instruments/Logs/`.
-
-If a browser login ends in the "Open Native Access?" prompt being denied,
-just click the login button on the page again — a fresh click re-triggers
-the prompt (automatic retries are blocked by the browser's popup
-protection, which can look like "it never asks again").
-
-## Migrating from the old flake
-
-The old `ni-setup`, `ni-install --kontakt8/--update-kontakt8/...` commands
-map to `ni setup`, `ni kontakt8 install/update/uninstall`, and
-`ni fix-msvcp140`. Your existing prefix is picked up unchanged; the first
-`ni launch` applies the new tray/login fixes to it automatically.
