@@ -25,6 +25,6 @@ pkgbase = ni-wine
 	optdepends = wine-staging: recommended Wine build for Native Instruments
 	optdepends = yad: nicer-looking setup progress dialog
 	source = ni-wine-2.0.0.tar.gz::https://github.com/selimbucher/native-instruments/archive/refs/tags/v2.0.0.tar.gz
-	sha256sums = 5b5a818898f4e4ac5d151790838830f15513acbf93398d67dacc0754f8839714
+	sha256sums = 4994a689c4bc4b8d2c575e80755556393c7fdee9ec4f8ce5be7ec8f57c2003cd
 
 pkgname = ni-wine
