@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import config
+from .browser import probe_browser
 from .desktop import current_scheme_handler, ensure_url_handler
 from .launch import native_access_running, clear_updater_residue
 from .util import which_first
@@ -67,17 +68,9 @@ def _dependency_checks() -> list[Check]:
         ("7z", ("7z", "7zz", "7za"), True, "unpacks the Kontakt installer (package: 7zip)"),
         ("msidump", ("msidump",), True, "reads MSI tables (package: msitools)"),
         ("pgrep", ("pgrep",), True, "process checks (package: procps)"),
-        ("Xvfb", ("Xvfb",), False, "hides installer windows during setup"),
-        ("xdotool", ("xdotool",), False, "auto-dismisses installer dialogs"),
-        ("yad/zenity", ("yad", "zenity"), False, "graphical setup progress"),
-        (
-            "chromium-family browser",
-            ("chromium", "chromium-browser", "google-chrome-stable", "google-chrome",
-             "brave-browser", "brave", "vivaldi-stable", "vivaldi",
-             "microsoft-edge-stable", "microsoft-edge"),
-            False,
-            "captures download URLs from the NI website",
-        ),
+        ("Xvfb", ("Xvfb",), True, "hides installer windows during setup"),
+        ("xdotool", ("xdotool",), True, "auto-dismisses installer dialogs"),
+        ("yad/zenity", ("yad", "zenity"), True, "graphical setup progress"),
     ]
     checks = []
     for label, names, required, purpose in deps:
@@ -85,6 +78,12 @@ def _dependency_checks() -> list[Check]:
         checks.append(
             Check(label, bool(found), found or f"not found ({purpose})", required)
         )
+    browser = probe_browser()
+    checks.append(Check(
+        "chromium-family browser",
+        bool(browser),
+        browser or "not found (captures download URLs from the NI website)",
+    ))
     return checks
 
 
