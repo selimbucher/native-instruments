@@ -11,7 +11,7 @@ import urllib.request
 from pathlib import Path
 from typing import NoReturn
 
-from . import __version__, config
+from . import config
 
 
 def info(msg: str) -> None:
@@ -43,9 +43,9 @@ def download(url: str, dest: Path, label: str | None = None) -> Path:
     re-downloading an unchanged file (same behaviour as `curl -z`).
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
-    request = urllib.request.Request(
-        url, headers={"User-Agent": f"ni-wine/{__version__}"}
-    )
+    # No custom User-Agent: Akamai (fronting native-instruments.com) 403s
+    # unrecognized UA strings but lets urllib's default through.
+    request = urllib.request.Request(url)
     if dest.exists():
         mtime = dest.stat().st_mtime
         request.add_header(
