@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import http.server
 import json
-import shutil
 import subprocess
 import tempfile
 import threading
@@ -41,17 +40,24 @@ BROWSER_CANDIDATES = (
 _SNAP_CHROMIUM = Path("/snap/bin/chromium")
 
 
-def find_browser() -> str:
+def probe_browser() -> str | None:
     browser = which_first(*BROWSER_CANDIDATES)
     if browser:
         return browser
     if _SNAP_CHROMIUM.is_file():
         return str(_SNAP_CHROMIUM)
-    die(
-        "no Chromium-family browser found (tried: "
-        + ", ".join(BROWSER_CANDIDATES)
-        + ").\nPass the download URL directly instead: ni kontakt8 install <url>"
-    )
+    return None
+
+
+def find_browser() -> str:
+    browser = probe_browser()
+    if browser is None:
+        die(
+            "no Chromium-family browser found (tried: "
+            + ", ".join(BROWSER_CANDIDATES)
+            + ").\nInstall chromium, or pass the URL directly: ni kontakt8 install <url>"
+        )
+    return browser
 
 
 def _is_confined(browser: str) -> bool:
@@ -146,6 +152,10 @@ def capture_download_url(
         _write_extension(Path(ext_dir), port, link_substring)
         info("Log in to Native Instruments in the browser window that just opened.")
         info("It closes automatically once the download link is found.")
+        info(
+            "If the browser asks to 'access other apps and services on this "
+            "device', click Allow — that is how the link reaches ni-wine."
+        )
         proc = subprocess.Popen(
             [
                 browser,
@@ -155,6 +165,9 @@ def capture_download_url(
                 f"--disable-extensions-except={ext_dir}",
                 "--no-first-run",
                 "--no-default-browser-check",
+                # The capture extension posts the link to 127.0.0.1, which
+                # newer Chromium gates behind a local-network-access prompt.
+                "--disable-features=LocalNetworkAccessChecks,PrivateNetworkAccessChecks",
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

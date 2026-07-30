@@ -70,6 +70,10 @@ def ensure_daemon_running(wine: Wine, prefix: Path) -> None:
     Windows *service*: executed directly it dies at the service-controller
     handshake, so it must be started through the service manager.  `net
     start` conveniently blocks until the service reports running.
+
+    On the first start after boot the daemon still needs some time to
+    build its product list (proportional to library size); Native Access
+    may briefly show "library empty" with a working Retry button.
     """
     daemon = config.ntk_daemon_exe(prefix)
     if not daemon.is_file() or _daemon_running():

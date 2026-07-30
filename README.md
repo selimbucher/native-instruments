@@ -16,18 +16,18 @@ and Native Instruments products under Wine on Linux. Includes a CLI-based instal
 
 Runtime dependencies (the CLI itself is pure Python ≥ 3.11 with no pip packages):
 
-| dependency | required | purpose |
-|---|---|---|
-| wine (staging recommended, WoW64 fine) | yes | runs everything |
-| winetricks | yes | vcrun2022 + PowerShell during setup |
-| cabextract | yes | msvcp140 fix |
-| 7z (`7zip` package; binary `7z`/`7zz`/`7za`) | yes | Kontakt installer extraction |
-| msitools (`msidump`) | yes | Kontakt installer extraction |
-| procps (`pgrep`) | yes | process checks |
-| Xvfb | no | hides installer windows during setup |
-| xdotool | no | auto-dismisses installer dialogs |
-| zenity or yad | no | graphical setup progress |
-| a Chromium-family browser | no | captures NI download URLs |
+| dependency | purpose |
+|---|---|
+| wine (staging recommended, WoW64 fine) | runs everything |
+| winetricks | vcrun2022 + PowerShell during setup |
+| cabextract | msvcp140 fix |
+| 7z (`7zip` package; binary `7z`/`7zz`/`7za`) | Kontakt installer extraction |
+| msitools (`msidump`) | Kontakt installer extraction |
+| procps (`pgrep`) | process checks |
+| Xvfb | hides installer windows during setup |
+| xdotool | auto-dismisses installer dialogs |
+| zenity or yad | graphical setup progress |
+| a Chromium-family browser | captures NI download URLs (your own browser is preferred; chromium works) |
 
 ### Debian / Ubuntu
 
@@ -35,21 +35,24 @@ Runtime dependencies (the CLI itself is pure Python ≥ 3.11 with no pip package
 sudo apt install winetricks cabextract 7zip msitools xvfb xdotool zenity procps pipx
 # Debian 12's wine (8.0) is too old — use the WineHQ repo (winehq-staging).
 # Debian keeps winetricks in "contrib"; enable that component.
-pipx install git+https://github.com/<you>/native-instruments
+pipx install git+https://github.com/selimbucher/native-instruments
 ```
 
 ### Arch
 
+Install [`ni-wine` from the AUR](https://aur.archlinux.org/packages/ni-wine)
+— all dependencies are pulled in automatically:
+
 ```sh
-# Arch's wine/wine-staging are new-WoW64 builds — no multilib needed.
-sudo pacman -S wine-staging winetricks cabextract 7zip msitools xorg-server-xvfb xdotool zenity python-pipx
-pipx install git+https://github.com/<you>/native-instruments
+yay -S ni-wine
+# recommended: the staging Wine build (provides `wine`, new-WoW64, no multilib)
+sudo pacman -S wine-staging
 ```
 
 ### NixOS
 
 ```sh
-nix profile install github:<you>/native-instruments
+nix profile install github:selimbucher/native-instruments
 # or add the flake's packages.x86_64-linux.default to your system config
 ```
 
@@ -76,7 +79,9 @@ Every command supports `--help`.
 For `kontakt8 install`/`update` without a URL, a browser window opens on the
 NI downloads page; log in and the download link is captured automatically
 (the browser uses its own profile under `~/.local/state/ni-wine`, so your
-login is remembered for next time).
+login is remembered for next time). If the browser asks to *"access other
+apps and services on this device"*, click **Allow** — that is how the
+download link reaches ni-wine.
 
 Environment: `NI_WINE_PREFIX` (prefix location, default `~/.wine-ni`),
 `WINE` (wine binary override), `NI_WINE_DEBUG` (keep Wine debug output).

@@ -9,8 +9,9 @@
       pkgs = nixpkgs.legacyPackages.${system};
       wine = pkgs.wineWow64Packages.staging;
 
-      # Tools ni-wine executes at runtime.  A chromium-family browser is
-      # probed from the user's own PATH (not pinned here — too heavy).
+      # Tools ni-wine executes at runtime.  The user's own browser (earlier
+      # on PATH) is preferred by the probe; chromium is the guaranteed
+      # fallback for the download-URL capture.
       runtimePath = pkgs.lib.makeBinPath [
         wine
         pkgs.winetricks
@@ -23,6 +24,7 @@
         pkgs.yad
         pkgs.xdg-utils
         pkgs.desktop-file-utils
+        pkgs.chromium
       ];
 
       ni-wine = pkgs.python3Packages.buildPythonApplication {
