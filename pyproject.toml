@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ni-wine"
+description = "Native Instruments software under Wine on Linux — setup, launch, and product management"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dynamic = ["version"]
+
+[project.scripts]
+ni = "ni_wine.cli:entry"
+native-access = "ni_wine.cli:native_access_entry"
+
+[tool.setuptools.dynamic]
+version = { attr = "ni_wine.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ni_wine = ["data/*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
