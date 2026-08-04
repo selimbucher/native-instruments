@@ -15,7 +15,7 @@ optdepends=('wine-staging: recommended Wine build for Native Instruments'
             'chromium: automatic download-URL capture (alternative to firefox)'
             'yad: nicer-looking setup progress dialog')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('249fb8eba248068c74c564c8228ae9158e302d5c47a11d7a9a6dc833bea5d36e')
+sha256sums=('90694925b468f744aa1da10dc016c01434c4d94f9249373f820fa2ea88226768')
 
 build() {
   cd "native-instruments-$pkgver"
