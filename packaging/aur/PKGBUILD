@@ -8,7 +8,7 @@ url="https://github.com/selimbucher/native-instruments"
 license=('MIT')
 depends=('python' 'wine' 'winetricks' 'cabextract' '7zip' 'msitools'
          'procps-ng' 'xorg-server-xvfb' 'xdotool' 'zenity' 'xdg-utils'
-         'desktop-file-utils')
+         'desktop-file-utils' 'hicolor-icon-theme')
 makedepends=('git' 'python-build' 'python-installer' 'python-wheel' 'python-setuptools')
 optdepends=('wine-staging: recommended Wine build for Native Instruments'
             'firefox: automatic download-URL capture (any firefox- or chromium-family browser works)'
