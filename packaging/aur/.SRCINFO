@@ -22,6 +22,7 @@ pkgbase = ni-wine
 	depends = zenity
 	depends = xdg-utils
 	depends = desktop-file-utils
+	depends = hicolor-icon-theme
 	optdepends = wine-staging: recommended Wine build for Native Instruments
 	optdepends = firefox: automatic download-URL capture (any firefox- or chromium-family browser works)
 	optdepends = chromium: automatic download-URL capture (alternative to firefox)
