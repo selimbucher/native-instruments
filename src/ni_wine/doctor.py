@@ -332,7 +332,7 @@ def run_doctor(prefix: Path, *, fix: bool = False) -> int:
             problem = msishim.ensure(wine, prefix, quiet=True)
             if problem:
                 fix_notes.append(Check("Kontakt installer hook", False, problem))
-        ensure_url_handler()
+        ensure_url_handler(prefix)
 
     checks = [
         *_dependency_checks(),

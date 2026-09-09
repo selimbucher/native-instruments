@@ -141,7 +141,7 @@ def run_setup(prefix: Path, *, ui: bool = False) -> None:
             warn(f"Kontakt installer hook not installed: {problem}")
 
         progress.step("Registering login URL handler...", 96)
-        if not ensure_url_handler(quiet=True):
+        if not ensure_url_handler(prefix, quiet=True):
             warn("could not register the native-access:// URL handler")
 
         progress.step("Done!", 100)
