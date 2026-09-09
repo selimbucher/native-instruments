@@ -82,8 +82,7 @@ step.
 ```
 usage: ni [-h] [-V] [--prefix PATH] <command> ...
 
-  launch [url]            launch Native Access (sets the prefix up first if needed)
-  setup                   the setup step on its own (e.g. `--no-ui`, or to redo it)
+  setup                   redo the first-time setup (e.g. with `--no-ui`)
   reinstall               wipe the Wine prefix and set everything up again
   kontakt8 install [src]  install Kontakt 8 (through Native Access, or from a file/URL)
   kontakt8 update [src]   update Kontakt 8 (through Native Access, or from a file/URL)
@@ -93,8 +92,8 @@ usage: ni [-h] [-V] [--prefix PATH] <command> ...
   doctor [--fix]          check dependencies, prefix health, login-URL wiring
 ```
 
-`native-access` (the desktop launcher) is equivalent to `ni launch`.
-Every command supports `--help`.
+`native-access [--prefix PATH] [url]` is the launcher itself; `ni` is
+maintenance. Every command supports `--help`.
 
 ### Kontakt 8
 

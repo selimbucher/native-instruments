@@ -9,9 +9,11 @@ from pathlib import Path
 from . import __version__, config
 
 _EPILOG = """\
+`native-access` starts Native Access (and sets the prefix up the first time);
+`ni` is for maintenance.
+
 examples:
-  ni setup                       first-time setup (Wine prefix + Native Access)
-  ni launch                      start Native Access (also: `native-access`)
+  ni setup                       redo the first-time setup (Wine prefix + Native Access)
   ni kontakt8 update             update Kontakt 8 through Native Access
   ni kontakt8 update <file|url>  update Kontakt 8 from a downloaded installer
   ni kontakt8 hook status        state of the Kontakt installer hook (msi shim)
@@ -51,15 +53,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-ui", action="store_true", help="print progress to the console only"
     )
 
-    launch = commands.add_parser(
-        "launch", help="launch Native Access (runs setup first if needed)"
-    )
-    launch.add_argument(
-        "url",
-        nargs="?",
-        default=None,
-        help="native-access:// URL to forward (used by the browser login callback)",
-    )
+    # Unlisted alias of `native-access`, kept for scripts and old desktop entries.
+    launch = commands.add_parser("launch")
+    launch.add_argument("url", nargs="?", default=None)
 
     reinstall = commands.add_parser(
         "reinstall", help="wipe the Wine prefix and set everything up again"
@@ -173,23 +169,29 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def native_access_main(argv: list[str] | None = None) -> int:
-    """Entry point for the `native-access` desktop launcher.
-
-    Accepts an optional native-access:// URL (browser login callback) and
-    keeps the old `--reinstall` flag working.
+    """Entry point for `native-access`: the desktop entry, the browser
+    login callback, and the command a user types.  Sets the prefix up on
+    first use, then launches Native Access.
     """
     parser = argparse.ArgumentParser(
         prog="native-access",
-        description="Launch Native Access under Wine (shortcut for `ni launch`).",
+        description="Start Native Access under Wine (first run sets everything up).",
     )
     parser.add_argument(
         "-V", "--version", action="version", version=f"ni-wine {__version__}"
+    )
+    parser.add_argument(
+        "--prefix",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="Wine prefix to use (default: ~/.wine-ni or $NI_WINE_PREFIX)",
     )
     parser.add_argument("--reinstall", action="store_true", help="wipe the prefix and set up again")
     parser.add_argument("url", nargs="?", default=None, help="native-access:// callback URL")
     args = parser.parse_args(argv)
 
-    prefix = config.default_prefix()
+    prefix = (args.prefix or config.default_prefix()).expanduser()
     if args.reinstall:
         from .launch import run_reinstall
 

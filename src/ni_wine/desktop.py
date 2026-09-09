@@ -39,8 +39,8 @@ def current_scheme_handler() -> str | None:
     return handler or None
 
 
-def _ni_exec() -> str:
-    """The `ni` the desktop entry should run.
+def _launcher_exec() -> str:
+    """The `native-access` the desktop entry should run.
 
     A system install stays a bare name (any PATH finds it, and the entry
     keeps working across package upgrades).  Anything under $HOME or in a
@@ -50,16 +50,16 @@ def _ni_exec() -> str:
     """
     running = Path(sys.argv[0]).resolve()
     if running.name in ("ni", "native-access"):
-        candidate = running.parent / "ni"
+        candidate = running.parent / "native-access"
         if candidate.is_file():
-            found = shutil.which("ni")
+            found = shutil.which("native-access")
             if found and Path(found).resolve() == candidate and Path.home() not in candidate.parents:
-                return "ni"
+                return "native-access"
             return str(candidate)
-    found = shutil.which("ni")
+    found = shutil.which("native-access")
     if found and Path.home() not in Path(found).parents:
-        return "ni"
-    return found or "ni"
+        return "native-access"
+    return found or "native-access"
 
 
 def install_user_desktop_files(prefix: Path, *, quiet: bool = False) -> None:
@@ -75,7 +75,7 @@ def install_user_desktop_files(prefix: Path, *, quiet: bool = False) -> None:
     apps = config.data_home() / "applications"
     target = apps / config.DESKTOP_FILE_NAME
     content = _packaged("native-access.desktop")
-    exec_line = f'Exec={_ni_exec()} --prefix "{prefix}" launch %u'
+    exec_line = f'Exec={_launcher_exec()} --prefix "{prefix}" %u'
     content = content.replace("Exec=native-access %u", exec_line)
     if target.is_file() and target.read_text() == content:
         return
