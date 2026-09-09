@@ -9,11 +9,12 @@ import socket
 import subprocess
 from pathlib import Path
 
-from . import config
+from . import config, daemon, msishim
 from .desktop import ensure_url_handler
+from .powershell import install_profile
 from .setup_cmd import run_setup
 from .util import die, guarded_rmtree, info, warn
-from .wine import Wine, apply_prefix_tweaks
+from .wine import Wine, apply_prefix_tweaks, foreign_prefix_users
 
 _OFFLINE_MESSAGE = (
     "No connection to native-instruments.com — Native Access has no offline "
@@ -26,15 +27,6 @@ def native_access_running() -> bool:
     return (
         subprocess.run(
             ["pgrep", "-f", r"Native Access\.exe"], stdout=subprocess.DEVNULL
-        ).returncode
-        == 0
-    )
-
-
-def _daemon_running() -> bool:
-    return (
-        subprocess.run(
-            ["pgrep", "-f", r"NTKDaemon\.exe"], stdout=subprocess.DEVNULL
         ).returncode
         == 0
     )
@@ -55,43 +47,6 @@ def clear_updater_residue(prefix: Path) -> bool:
     info("clearing Native Access self-update leftovers")
     guarded_rmtree(updater)
     return True
-
-
-_NTK_SERVICE = "NTKDaemonService"
-
-
-def ensure_daemon_running(wine: Wine, prefix: Path) -> None:
-    """Start the NTK daemon service if it isn't running yet.
-
-    When the daemon isn't up, Native Access falls back to querying its
-    version via `wmic datafile` — unimplemented in Wine — and concludes it
-    must reinstall the daemon, costing ~30 s on every single launch (and
-    wedging the app entirely if that reinstall fails).  The daemon is a
-    Windows *service*: executed directly it dies at the service-controller
-    handshake, so it must be started through the service manager.  `net
-    start` conveniently blocks until the service reports running.
-
-    On the first start after boot the daemon still needs some time to
-    build its product list (proportional to library size); Native Access
-    may briefly show "library empty" with a working Retry button.
-    """
-    daemon = config.ntk_daemon_exe(prefix)
-    if not daemon.is_file() or _daemon_running():
-        return
-    info("starting NTK daemon service...")
-    env = wine.env()
-    if "NI_WINE_DEBUG" not in os.environ:
-        env["WINEDEBUG"] = "-all"
-    try:
-        subprocess.run(
-            [wine.wine, "net", "start", _NTK_SERVICE],
-            env=env,
-            timeout=90,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except subprocess.TimeoutExpired:
-        warn("NTK daemon service did not start in time — continuing anyway")
 
 
 def _screen_size() -> tuple[int, int] | None:
@@ -200,7 +155,22 @@ def run_launch(prefix: Path, url: str | None = None) -> int:
     if not check_online():
         _warn_offline()
 
-    ensure_daemon_running(wine, prefix)
+    # Prefixes set up by older ni-wine still run the wrapper's profile.ps1.
+    if install_profile(prefix):
+        info("installed ni-wine's PowerShell profile in the prefix")
+
+    # Native Access must find its daemon running (see daemon.py); refuse to
+    # launch into the stuck screen otherwise.  On the first start after boot
+    # the daemon still needs time to build its product list; NA may briefly
+    # show "library empty" with a working Retry.
+    problem = daemon.ensure(wine, prefix)
+    if problem:
+        die(problem)
+
+    # Lets Native Access install/update Kontakt like any other product.
+    problem = msishim.ensure(wine, prefix)
+    if problem:
+        warn(f"Kontakt installer hook not armed: {problem}")
 
     args = [str(config.na_exe(prefix))]
     if url:
@@ -230,6 +200,12 @@ def run_reinstall(prefix: Path, *, assume_yes: bool = False) -> None:
             info("aborted")
             return
 
+    hosts = foreign_prefix_users(prefix)
+    if hosts:
+        die(
+            f"{len(hosts)} plugin host(s) (yabridge) are using {prefix} — "
+            "close your DAW first."
+        )
     info("killing Wine session...")
     wine = Wine(prefix)
     wine.kill_server()

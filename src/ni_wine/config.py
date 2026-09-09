@@ -7,14 +7,11 @@ from pathlib import Path
 
 APP_NAME = "ni-wine"
 
-NA_INSTALLER_URL = (
-    "https://www.native-instruments.com/fileadmin/downloads/Native-Access_2.exe"
-)
+# The download button on native-instruments.com/pages/native-access.  The old
+# fileadmin/downloads URL now redirects to that HTML page (site moved to
+# Shopify, Sept 2026), so setup verifies it really got a Windows executable.
+NA_INSTALLER_URL = "https://storage.googleapis.com/ni-assets/downloads/Native-Access_2.exe"
 VCREDIST_URL = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
-NI_DOWNLOADS_PAGE = (
-    "https://www.native-instruments.com/en/account/downloads/"
-    "0e504595-40d8-4982-978e-a242f036912d"
-)
 KONTAKT8_ZIP_NAME = "Kontakt_8_Installer.zip"
 
 # The URL scheme Native Access registers for its browser-login callback.

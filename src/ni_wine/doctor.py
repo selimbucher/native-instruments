@@ -7,6 +7,8 @@ Covers the failure modes users actually hit:
 - native-access:// login callback not routed (no x-scheme-handler)
 - browser login prompts (optionally pre-authorize the NI origins)
 - leftover Native Access self-update downloads (~370 MB)
+- NTK daemon missing / not registered / not running (the cause of Native
+  Access hanging on "Please grant permission … to install dependencies")
 """
 
 from __future__ import annotations
@@ -17,8 +19,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import config
-from .browser import probe_browser
+from . import config, daemon, msishim, powershell
 from .desktop import current_scheme_handler, ensure_url_handler
 from .launch import native_access_running, clear_updater_residue
 from .util import which_first
@@ -69,7 +70,7 @@ def _dependency_checks() -> list[Check]:
         ("msidump", ("msidump",), True, "reads MSI tables (package: msitools)"),
         ("pgrep", ("pgrep",), True, "process checks (package: procps)"),
         ("Xvfb", ("Xvfb",), True, "hides installer windows during setup"),
-        ("xdotool", ("xdotool",), True, "repositions off-screen windows"),
+        ("xdotool", ("xdotool",), False, "repositions off-screen windows on X11 desktops"),
         ("yad/zenity", ("yad", "zenity"), True, "graphical setup progress"),
     ]
     checks = []
@@ -78,13 +79,6 @@ def _dependency_checks() -> list[Check]:
         checks.append(
             Check(label, bool(found), found or f"not found ({purpose})", required)
         )
-    browser = probe_browser()
-    checks.append(Check(
-        "web browser (chromium- or firefox-family)",
-        browser is not None,
-        browser[1] if browser else
-        "not found (captures download URLs from the NI website)",
-    ))
     return checks
 
 
@@ -101,13 +95,44 @@ def _prefix_checks(prefix: Path) -> list[Check]:
               "" if config.na_exe(prefix).is_file() else "run `ni setup`")
     )
     checks.append(
-        Check("NTKDaemon installed", config.ntk_daemon_exe(prefix).is_file(),
-              "" if config.ntk_daemon_exe(prefix).is_file() else "run `ni setup`")
+        Check("NTKDaemon installed", daemon.installed(prefix),
+              "" if daemon.installed(prefix)
+              else "installed automatically on next `ni launch`")
+    )
+    checks.append(
+        Check(f"NTKDaemon service ({daemon.SERVICE}) registered",
+              daemon.service_registered(prefix),
+              "" if daemon.service_registered(prefix)
+              else "reinstalled automatically on next `ni launch`")
+    )
+    if powershell.pwsh_installed(prefix):
+        current = powershell.profile_current(prefix)
+        checks.append(
+            Check("ni-wine PowerShell profile installed", current,
+                  "" if current
+                  else "the winetricks profile hangs the NA installer and breaks "
+                       "NA's daemon install — run `ni doctor --fix`")
+        )
+    is_running = daemon.running(prefix)
+    checks.append(
+        Check("NTK daemon running", is_running,
+              "" if is_running
+              else "started by `ni launch` (or `ni doctor --fix`) — Native "
+                   "Access hangs on 'grant permission' without it",
+              required=False)
     )
     checks.append(
         Check("Kontakt 8 installed", config.kontakt8_exe(prefix).is_file(),
               "" if config.kontakt8_exe(prefix).is_file()
-              else "optional — `ni kontakt8 install`", required=False)
+              else "optional — install it through Native Access", required=False)
+    )
+    hook_ok = msishim.installed(prefix) and msishim.current(prefix)
+    checks.append(
+        Check("Kontakt installer hook (msi shim) installed", hook_ok,
+              "" if hook_ok
+              else f"{msishim.describe(prefix)} — Native Access cannot install "
+                   "Kontakt without it; armed by `ni launch` or `ni doctor --fix`",
+              required=False)
     )
 
     reg_text = ""
@@ -138,6 +163,29 @@ def _prefix_checks(prefix: Path) -> list[Check]:
               required=False)
     )
     return checks
+
+
+def _elevation_check(prefix: Path) -> Check:
+    """Does Native Access's own daemon-reinstall path work here?
+
+    Informational: ni-wine keeps the daemon running so NA never needs it,
+    but knowing it is broken explains the 'grant permission' screen when
+    Native Access is started some other way.
+    """
+    label = "Native Access's own daemon installer (PowerShell elevation) works"
+    if not config.na_exe(prefix).is_file():
+        return Check(label, True, "skipped — Native Access not installed", required=False)
+    outcome = daemon.probe_elevation(Wine(prefix), prefix)
+    if outcome is None:
+        return Check(label, True, "skipped — needs a terminal", required=False)
+    return Check(
+        label,
+        outcome,
+        "" if outcome
+        else "broken — harmless while ni-wine starts the daemon before "
+             "Native Access; `ni doctor --fix` installs the PowerShell profile",
+        required=False,
+    )
 
 
 def _handler_check() -> Check:
@@ -269,6 +317,7 @@ def _browser_checks(fix: bool) -> list[Check]:
 
 
 def run_doctor(prefix: Path, *, fix: bool = False) -> int:
+    fix_notes: list[Check] = []
     if fix:
         if config.drive_c(prefix).is_dir():
             wine = Wine(prefix)
@@ -276,11 +325,20 @@ def run_doctor(prefix: Path, *, fix: bool = False) -> int:
                 # explorer.exe reads the tray settings only at startup.
                 wine.kill_server()
             clear_updater_residue(prefix)
+            powershell.install_profile(prefix)
+            problem = daemon.ensure(wine, prefix)
+            if problem:
+                fix_notes.append(Check("NTK daemon repair", False, problem))
+            problem = msishim.ensure(wine, prefix, quiet=True)
+            if problem:
+                fix_notes.append(Check("Kontakt installer hook", False, problem))
         ensure_url_handler()
 
     checks = [
         *_dependency_checks(),
         *_prefix_checks(prefix),
+        *fix_notes,
+        _elevation_check(prefix),
         _handler_check(),
         *_browser_checks(fix),
     ]

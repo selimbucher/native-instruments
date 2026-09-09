@@ -8,16 +8,13 @@
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
       wine = pkgs.wineWow64Packages.staging;
+      version = "2.2.0";
 
-      # Tools ni-wine executes at runtime.  The user's own browser (earlier
-      # on PATH) is preferred by the probe — chromium- and firefox-family
-      # both work for the download-URL capture; firefox is the guaranteed
-      # fallback.
+      # Tools ni-wine executes at runtime.
       runtimePath = pkgs.lib.makeBinPath [
         wine
         pkgs.winetricks
         pkgs.xorg.xorgserver # Xvfb
-        pkgs.xdotool
         pkgs.cabextract
         pkgs.p7zip
         pkgs.msitools
@@ -25,15 +22,30 @@
         pkgs.yad
         pkgs.xdg-utils
         pkgs.desktop-file-utils
-        pkgs.firefox
       ];
+
+      # The forwarding msi.dll for the Kontakt installer (see shim/README.md),
+      # cross-compiled from source with the 32-bit mingw-w64 toolchain.
+      msi-shim = pkgs.pkgsCross.mingw32.stdenv.mkDerivation {
+        pname = "ni-wine-msi-shim";
+        inherit version;
+        src = ./shim;
+        nativeBuildInputs = [ pkgs.buildPackages.python3 ];
+        buildPhase = "make CC=$CC";
+        installPhase = "install -Dm644 msi_shim32.dll $out/msi_shim32.dll";
+        dontStrip = true;
+      };
 
       ni-wine = pkgs.python3Packages.buildPythonApplication {
         pname = "ni-wine";
-        version = "2.1.3";
+        inherit version;
         pyproject = true;
         src = ./.;
         build-system = [ pkgs.python3Packages.setuptools ];
+
+        postPatch = ''
+          cp ${msi-shim}/msi_shim32.dll src/ni_wine/data/msi_shim32.dll
+        '';
 
         makeWrapperArgs = [ "--prefix" "PATH" ":" runtimePath ];
 
@@ -51,7 +63,10 @@
       };
     in
     {
-      packages.${system}.default = ni-wine;
+      packages.${system} = {
+        default = ni-wine;
+        msi-shim = msi-shim;
+      };
 
       devShells.${system}.default = pkgs.mkShell {
         packages = [

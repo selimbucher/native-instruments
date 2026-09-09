@@ -6,6 +6,7 @@ import contextlib
 import os
 import shutil
 import subprocess
+import tempfile
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -62,7 +63,15 @@ class Wine:
             [self.wine, *args], env=env, check=check, stdout=out, stderr=out
         )
 
-    def reg_add(self, key: str, value: str, data: str, *, reg_type: str = "REG_SZ") -> bool:
+    def reg_add(
+        self,
+        key: str,
+        value: str,
+        data: str,
+        *,
+        reg_type: str = "REG_SZ",
+        kill_on_failure: bool = True,
+    ) -> bool:
         args = ["reg", "add", key]
         if value:
             args += ["/v", value]
@@ -71,26 +80,60 @@ class Wine:
         args += ["/t", reg_type, "/d", data, "/f"]
 
         for attempt in (1, 2):
-            result = subprocess.run(
-                [self.wine, *args],
-                env=self.env(),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
+            # No pipes: on a cold prefix the first wine call boots services
+            # that inherit our stdio and would hold a pipe open indefinitely.
+            with tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as err:
+                result = subprocess.run(
+                    [self.wine, *args],
+                    env=self.env(),
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=err,
+                )
+                err.seek(0)
+                stderr = err.read()
             if result.returncode == 0:
                 return True
-            if attempt == 1:
+            if attempt == 1 and kill_on_failure:
                 # A stale wineserver (e.g. from a previous wine version)
                 # makes every wine call fail; kick it and try once more.
                 self.kill_server()
                 time.sleep(1)
-        tail = (result.stderr or "").strip().splitlines()
+        tail = stderr.strip().splitlines()
         warn(
             f"failed to set registry value {key}\\{value or '(default)'}"
             + (f": {tail[-1]}" if tail else "")
         )
         return False
+
+    def reg_query(self, key: str, value: str) -> str | None:
+        """The data of *value* under *key*, or None (asks wineserver)."""
+        with tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as out:
+            result = subprocess.run(
+                [self.wine, "reg", "query", key, "/v", value],
+                env=self.env(),
+                stdin=subprocess.DEVNULL,
+                stdout=out,
+                stderr=subprocess.DEVNULL,
+            )
+            out.seek(0)
+            stdout = out.read()
+        if result.returncode != 0:
+            return None
+        for line in stdout.splitlines():
+            parts = line.split(None, 2)
+            if len(parts) == 3 and parts[0].lower() == value.lower():
+                return parts[2].strip()
+        return None
+
+    def reg_delete(self, key: str) -> bool:
+        result = subprocess.run(
+            [self.wine, "reg", "delete", key, "/f"],
+            env=self.env(),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return result.returncode == 0
 
     def kill_server(self) -> None:
         if not self.wineserver:
@@ -123,6 +166,37 @@ class Wine:
             return reg.read_text(encoding="utf-8", errors="replace")
         except OSError:
             return ""
+
+
+def foreign_prefix_users(prefix: Path) -> list[int]:
+    """PIDs of yabridge plugin hosts running inside *prefix*.
+
+    A DAW's bridged plugins share the prefix's wineserver; killing that
+    server (kill_server, reinstall) takes them — and the DAW — down with it.
+    """
+    result = subprocess.run(
+        ["pgrep", "-f", "yabridge-host"], capture_output=True, text=True
+    )
+    wanted = str(prefix.expanduser().resolve())
+    pids = []
+    for pid in result.stdout.split():
+        try:
+            environ = Path(f"/proc/{pid}/environ").read_bytes().split(b"\0")
+            stat = Path(f"/proc/{pid}/stat").read_text()
+        except OSError:
+            continue
+        # Hosts whose DAW is gone get re-parented to init/systemd; they are
+        # leftovers, not a live session.
+        ppid = int(stat.rsplit(")", 1)[1].split()[1])
+        if ppid <= 1:
+            continue
+        for entry in environ:
+            if entry.startswith(b"WINEPREFIX="):
+                value = entry[len(b"WINEPREFIX="):].decode(errors="replace")
+                if str(Path(value).expanduser().resolve()) == wanted:
+                    pids.append(int(pid))
+                break
+    return pids
 
 
 def _start_xvfb(xvfb: str, size: str) -> tuple[subprocess.Popen, str] | None:

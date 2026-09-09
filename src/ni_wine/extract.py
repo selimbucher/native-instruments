@@ -1,18 +1,27 @@
-"""Extract a Kontakt 8 installer zip into a Wine drive_c layout.
+"""Lay out Kontakt 8's files from its installer payload into a drive_c tree.
 
-NI's installer is a zip containing a 7z-extractable exe, which holds an MSI
-plus an OFFLINE payload tree of hex-named directories.  The MSI's Directory/
-Component/File tables describe where each payload file belongs on C:.  We
-replay that mapping ourselves instead of running the installer, because the
-MSI's custom actions fail under Wine.
+NI's installer is a zip holding a 7z-extractable InstallAware exe, which
+carries an MSI plus an OFFLINE payload tree of hex-named directories.  The
+MSI's Directory/Component/File tables say where each payload file belongs
+on C:.  We replay that mapping ourselves instead of letting Wine's MSI
+engine run the package (it hangs — see shim/msi_shim.c).
 
-Extraction is cached per zip checksum (the 7z step is slow), keyed under the
-ni-wine cache directory.
+Two entry points:
+
+- `plan_installer(zip_or_exe)` unpacks the installer with 7z (cached per
+  checksum; slow the first time) and plans the layout.
+- `plan_installer_dir(msi)` plans from a payload the installer has already
+  unpacked itself — the case when Native Access runs the installer and the
+  msi shim calls back into ni-wine.
+
+Both return a `Plan`; nothing in the prefix changes until `Plan.execute`,
+so callers can remove the old install only once the new one is verified.
 """
 
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 import subprocess
 import zipfile
@@ -61,9 +70,17 @@ def _extract_payload(zip_path: Path, cache: Path) -> None:
     guarded_rmtree(cache)
     cache.mkdir(parents=True)
 
-    info("extracting zip...")
-    with zipfile.ZipFile(zip_path) as zf:
-        zf.extractall(cache / "zip")
+    if zipfile.is_zipfile(zip_path):
+        info("extracting zip...")
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(cache / "zip")
+    else:
+        # Native Access downloads the bare setup exe for some artifacts.
+        (cache / "zip").mkdir(parents=True, exist_ok=True)
+        try:
+            os.link(zip_path, cache / "zip" / zip_path.name)
+        except OSError:
+            shutil.copy2(zip_path, cache / "zip" / zip_path.name)
     exes = list((cache / "zip").rglob("*.exe"))
     if not exes:
         die("no .exe found inside the installer zip")
@@ -84,8 +101,16 @@ def _dump_msi_tables(msi: Path, idt_dir: Path) -> None:
     if (idt_dir / ".done").exists() and (idt_dir / "Directory.idt").exists():
         return
     idt_dir.mkdir(parents=True, exist_ok=True)
+    msidump = which_first("msidump")
+    if not msidump:
+        die("msidump not found (install msitools)")
     subprocess.run(
-        ["msidump", "-t", str(msi)], check=True, cwd=idt_dir, stdout=subprocess.DEVNULL
+        [msidump, "-t", str(msi)],
+        check=True,
+        cwd=idt_dir,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
     (idt_dir / ".done").touch()
 
@@ -102,28 +127,84 @@ def _read_idt(idt_dir: Path, name: str) -> list[list[str]]:
     return rows
 
 
-def extract_kontakt8(zip_path: Path, out_dir: Path, *, update: bool = False) -> None:
-    """Extract *zip_path* into a drive_c layout at *out_dir*.
+def _file_hash(path: Path) -> str:
+    digest = hashlib.md5()
+    with open(path, "rb") as handle:
+        while chunk := handle.read(1 << 20):
+            digest.update(chunk)
+    return digest.hexdigest()[:12]
 
-    With update=True existing destination files are overwritten.
+
+def _offline_in(root: Path) -> Path | None:
+    for candidate in (root / "OFFLINE", root / "data" / "OFFLINE"):
+        if candidate.is_dir():
+            return candidate
+    try:
+        entries = [e for e in root.iterdir() if e.is_dir()]
+    except OSError:
+        return None
+    for entry in entries:
+        nested = entry / "OFFLINE"
+        if nested.is_dir():
+            return nested
+    return None
+
+
+def _find_offline(msi: Path) -> Path | None:
+    """The OFFLINE payload tree belonging to an installer's *msi*.
+
+    A 7z-unpacked installer keeps the MSI and OFFLINE together.  InstallAware
+    itself puts the MSI in `%TEMP%\\mia1\\` and the payload in a sibling
+    `%TEMP%\\mia<hex>.tmp\\` directory, so the siblings are searched too,
+    newest first.
     """
-    zip_path = zip_path.resolve()
-    zip_hash = hashlib.md5(zip_path.read_bytes()).hexdigest()[:12]
-    cache = config.cache_dir() / "kontakt8" / f"cache-{zip_hash}"
+    found = _offline_in(msi.parent)
+    if found is not None:
+        return found
+    siblings = [d for d in msi.parent.parent.glob("mia*") if d.is_dir() and d != msi.parent]
+    siblings.sort(key=lambda d: d.stat().st_mtime, reverse=True)
+    for sibling in siblings:
+        found = _offline_in(sibling)
+        if found is not None:
+            return found
+    return None
 
-    _extract_payload(zip_path, cache)
 
-    msis = list((cache / "exe").rglob("*.msi"))
-    if not msis:
-        die("no .msi found in extracted installer")
-    msi = msis[0].resolve()
+class Plan:
+    """Everything needed to lay a payload out, computed before touching the prefix."""
 
-    offline_dirs = [p for p in (cache / "exe").rglob("OFFLINE") if p.is_dir()]
-    if not offline_dirs:
-        die("no OFFLINE payload directory found in extracted installer")
-    offline = offline_dirs[0].resolve()
+    def __init__(self, copy_list: list[tuple[Path, str]], offline: Path) -> None:
+        self.copy_list = copy_list
+        self.offline = offline
 
-    idt_dir = cache / "idt"
+    def execute(self, out_dir: Path, *, update: bool) -> None:
+        info(f"installing to {out_dir}...")
+        copied = 0
+        for src, dest_dir in self.copy_list:
+            dest = out_dir / dest_dir / src.name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if not dest.exists() or update:
+                shutil.copy2(src, dest)
+            copied += 1
+
+        referenced = {str(src) for src, _ in self.copy_list}
+        unmapped = sum(
+            1 for f in self.offline.rglob("*") if f.is_file() and str(f) not in referenced
+        )
+
+        # Minimal product manifest — the full manifest the MSI would write
+        # confuses NTKDaemon under Wine (it flags the install as broken).
+        json_dir = out_dir / "users/Public/Documents/Native Instruments/installed_products"
+        json_dir.mkdir(parents=True, exist_ok=True)
+        (json_dir / "Kontakt 8.json").write_text(
+            '{"InstallDir":"C:\\\\Program Files\\\\Native Instruments\\\\Kontakt 8\\\\"}'
+        )
+
+        info(f"done: {copied} files copied, {unmapped} payload files unused (expected)")
+
+
+def _plan(msi: Path, offline: Path, idt_dir: Path) -> Plan:
+    """Work out where every payload file goes from the MSI's tables."""
     _dump_msi_tables(msi, idt_dir)
 
     # --- Directory table: key -> (parent, long name) -----------------------
@@ -221,28 +302,92 @@ def extract_kontakt8(zip_path: Path, out_dir: Path, *, update: bool = False) -> 
                 break
             current = parent
     info(f"built {len(copy_list)} copy operations")
+    if not copy_list:
+        die("the installer's MSI tables map to no files — layout changed?")
+    return Plan(copy_list, offline)
 
-    # --- Execute ------------------------------------------------------------
-    info(f"installing to {out_dir}...")
-    copied = 0
-    for src, dest_dir in copy_list:
-        dest = out_dir / dest_dir / src.name
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        if not dest.exists() or update:
-            shutil.copy2(src, dest)
-        copied += 1
 
-    referenced = {str(src) for src, _ in copy_list}
-    unmapped = sum(
-        1 for f in offline.rglob("*") if f.is_file() and str(f) not in referenced
+def plan_installer(zip_path: Path) -> Plan:
+    """Unpack *zip_path* (installer zip or setup exe) and plan its layout.
+
+    Nothing in the prefix is touched until `Plan.execute` runs.
+    """
+    zip_path = zip_path.resolve()
+    cache = config.cache_dir() / "kontakt8" / f"cache-{_file_hash(zip_path)}"
+
+    _extract_payload(zip_path, cache)
+
+    msis = list((cache / "exe").rglob("*.msi"))
+    if not msis:
+        die("no .msi found in extracted installer")
+    msi = msis[0].resolve()
+
+    offline_dirs = [p for p in (cache / "exe").rglob("OFFLINE") if p.is_dir()]
+    if not offline_dirs:
+        die("no OFFLINE payload directory found in extracted installer")
+    return _plan(msi, offline_dirs[0].resolve(), cache / "idt")
+
+
+def _setup_exe_near(msi: Path) -> Path | None:
+    """The downloaded setup exe the daemon unpacked *msi* from, if still around
+    (`%TEMP%\\<Product>_Installer\\<name> Setup PC.exe`)."""
+    temp = msi.parent.parent
+    candidates = [
+        exe for exe in temp.glob("*_Installer/*.exe")
+        if exe.is_file() and exe.stat().st_size > 50 * 2**20
+    ]
+    candidates.sort(key=lambda exe: exe.stat().st_size, reverse=True)
+    return candidates[0] if candidates else None
+
+
+def _pristine_msi(setup_exe: Path) -> Path | None:
+    """Pull the untouched MSI out of the setup exe (a 7z-readable SFX).
+
+    The MSI InstallAware hands to MsiInstallProduct has been rewritten by
+    its runtime and msitools cannot read it; the original still describes
+    the same file layout.  Cached per setup exe.
+    """
+    seven_zip = which_first("7z", "7zz", "7za")
+    if not seven_zip:
+        return None
+    stat = setup_exe.stat()
+    out = config.cache_dir() / "kontakt8" / f"pristine-{stat.st_size}-{int(stat.st_mtime)}"
+    existing = list(out.glob("*.msi"))
+    if existing:
+        return existing[0]
+    out.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(
+        [seven_zip, "e", str(setup_exe), f"-o{out}", "*.msi", "-r", "-y"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
+    found = list(out.glob("*.msi"))
+    if result.returncode != 0 or not found:
+        return None
+    return found[0]
 
-    # Minimal product manifest — the full manifest the MSI would write
-    # confuses NTKDaemon under Wine (it flags the install as broken).
-    json_dir = out_dir / "users/Public/Documents/Native Instruments/installed_products"
-    json_dir.mkdir(parents=True, exist_ok=True)
-    (json_dir / "Kontakt 8.json").write_text(
-        '{"InstallDir":"C:\\\\Program Files\\\\Native Instruments\\\\Kontakt 8\\\\"}'
-    )
 
-    info(f"done: {copied} files copied, {unmapped} payload files unused (expected)")
+def plan_installer_dir(msi: Path) -> Plan:
+    """Plan the layout of a payload the InstallAware installer already unpacked.
+
+    *msi* is the package the installer passed to MsiInstallProduct; the
+    OFFLINE tree is in a sibling temp directory.  The tables are read from
+    the pristine MSI inside the setup exe when it is available (see
+    `_pristine_msi`), otherwise from *msi* itself.
+    """
+    msi = msi.resolve()
+    if not msi.is_file():
+        die(f"{msi} does not exist")
+    offline = _find_offline(msi)
+    if offline is None:
+        die(f"no OFFLINE payload directory found for {msi}")
+    tables = msi
+    setup_exe = _setup_exe_near(msi)
+    if setup_exe is not None:
+        pristine = _pristine_msi(setup_exe)
+        if pristine is not None:
+            info(f"reading tables from the pristine MSI in {setup_exe.name}")
+            tables = pristine
+    idt_dir = config.cache_dir() / "kontakt8" / f"idt-{_file_hash(tables)}"
+    return _plan(tables, offline, idt_dir)
