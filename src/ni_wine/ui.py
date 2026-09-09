@@ -6,9 +6,10 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 from types import TracebackType
 
-from .util import info
+from .util import info, warn
 
 _YAD_CSS = """\
 window, .dialog {
@@ -65,7 +66,8 @@ class Progress:
                 "--progress",
                 f"--title={self._title}",
                 "--text=Native Access Setup",
-                "--percentage=0",
+                # No --percentage: yad 14+ dropped it (multi-bar progress) and
+                # refuses to start; the bar starts at 0 anyway.
                 "--auto-close",
                 "--center",
                 "--width=480",
@@ -91,11 +93,20 @@ class Progress:
                 cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
                 text=True,
             )
         except OSError:
             self._proc = None
+            return self
+        # A dialog that rejects an option dies at once; say so instead of
+        # silently reporting to nobody.
+        time.sleep(0.3)
+        if self._proc.poll() is not None:
+            err = (self._proc.stderr.read() if self._proc.stderr else "").strip()
+            warn(f"{cmd[0]} progress dialog failed ({err or 'exited'}); "
+                 "reporting progress on the console")
+            self._forget_dialog()
         return self
 
     def step(self, message: str, percent: int) -> None:
