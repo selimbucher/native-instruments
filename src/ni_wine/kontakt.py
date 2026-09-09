@@ -4,11 +4,11 @@ Kontakt's own installer hangs under Wine (see shim/msi_shim.c), so the
 files are laid out by ni-wine from the installer's payload (extract.py).
 Two ways to get there:
 
-- Through Native Access, like any other product: click Install/Update in
-  NA, its daemon downloads and runs the installer, and when the installer
-  reaches its MSI step the msi shim hands the work to `apply_installer`
-  below.  Native Access then sees an ordinary successful install.  This
-  needs the hook installed in the prefix (`ni launch` does that).
+- Through Native Access, like any other product (the normal way): click
+  Install/Update there, its daemon downloads and runs the installer, and
+  when the installer reaches its MSI step the msi shim hands the work to
+  `apply_installer` below.  Native Access then sees an ordinary successful
+  install.  This needs the hook in the prefix; `native-access` arms it.
 - From a file or URL: `ni kontakt8 install|update <zip|exe|url>` unpacks
   the installer with 7z and lays it out directly, no Native Access involved.
 """
@@ -24,7 +24,7 @@ from pathlib import Path
 from . import config, msishim
 from .extract import plan_installer, plan_installer_dir
 from .util import die, download, guarded_rmtree, info
-from .wine import Wine, foreign_prefix_users
+from .wine import foreign_prefix_users
 
 
 def _guard_prefix_users(prefix: Path) -> None:
@@ -45,22 +45,6 @@ def _remove_kontakt_files(prefix: Path, *, include_product_json: bool) -> None:
 
 
 # --- via Native Access ------------------------------------------------------
-
-
-def _via_native_access(prefix: Path, verb: str) -> None:
-    from .launch import run_launch
-
-    wine = Wine(prefix)
-    problem = msishim.ensure(wine, prefix)
-    if problem:
-        die(problem + " — pass the installer file or URL instead")
-    print()
-    info(f"Native Access will open now.  Click {verb} on Kontakt 8 there.")
-    info("Native Access downloads and runs NI's installer; ni-wine steps in at")
-    info("its MSI step and lays the files out, so it completes like any other")
-    info("product.  Keep your DAW closed while it runs.")
-    print()
-    raise SystemExit(run_launch(prefix))
 
 
 def win_to_unix(prefix: Path, win_path: str) -> Path:
@@ -143,12 +127,10 @@ def _obtain_installer(source: str) -> tuple[Path, bool]:
     return download(source, config.cache_dir() / name, label="Kontakt 8 installer"), True
 
 
-def install(prefix: Path, source: str | None = None) -> None:
+def install(prefix: Path, source: str) -> None:
     if config.kontakt8_exe(prefix).is_file():
         info("Kontakt 8 is already installed — use `ni kontakt8 update` to update")
         return
-    if source is None:
-        _via_native_access(prefix, "Install")
     installer, owned = _obtain_installer(source)
     plan = plan_installer(installer)
     _guard_prefix_users(prefix)
@@ -158,9 +140,7 @@ def install(prefix: Path, source: str | None = None) -> None:
     info("Kontakt 8 installed")
 
 
-def update(prefix: Path, source: str | None = None) -> None:
-    if source is None:
-        _via_native_access(prefix, "Update")
+def update(prefix: Path, source: str) -> None:
     installer, owned = _obtain_installer(source)
     plan = plan_installer(installer)  # verified before anything is removed
     _guard_prefix_users(prefix)

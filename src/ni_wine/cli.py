@@ -9,13 +9,11 @@ from pathlib import Path
 from . import __version__, config
 
 _EPILOG = """\
-`native-access` starts Native Access (and sets the prefix up the first time);
-`ni` is for maintenance.
-
 examples:
-  ni setup                       redo the first-time setup (Wine prefix + Native Access)
-  ni kontakt8 update             update Kontakt 8 through Native Access
+  ni launch                      start Native Access (first run sets the prefix up);
+                                 `native-access` is the same command
   ni kontakt8 update <file|url>  update Kontakt 8 from a downloaded installer
+                                 (normally you just click Update in Native Access)
   ni kontakt8 hook status        state of the Kontakt installer hook (msi shim)
   ni doctor --fix                diagnose and repair common problems
 
@@ -53,9 +51,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-ui", action="store_true", help="print progress to the console only"
     )
 
-    # Unlisted alias of `native-access`, kept for scripts and old desktop entries.
-    launch = commands.add_parser("launch")
-    launch.add_argument("url", nargs="?", default=None)
+    launch = commands.add_parser(
+        "launch", help="start Native Access (sets the prefix up first if needed)"
+    )
+    launch.add_argument(
+        "url",
+        nargs="?",
+        default=None,
+        help="native-access:// URL to forward (the browser login callback)",
+    )
 
     reinstall = commands.add_parser(
         "reinstall", help="wipe the Wine prefix and set everything up again"
@@ -68,14 +72,12 @@ def _build_parser() -> argparse.ArgumentParser:
     kontakt8_commands = kontakt8.add_subparsers(
         dest="kontakt8_command", metavar="<action>", required=True
     )
-    source_help = (
-        "installer zip/exe: a local file or URL (default: through Native Access — "
-        "click Install/Update there)"
-    )
-    k8_install = kontakt8_commands.add_parser("install", help="install Kontakt 8")
-    k8_install.add_argument("source", nargs="?", default=None, metavar="file|url", help=source_help)
-    k8_update = kontakt8_commands.add_parser("update", help="update Kontakt 8")
-    k8_update.add_argument("source", nargs="?", default=None, metavar="file|url", help=source_help)
+    source_help = "installer zip/exe: a local file or URL"
+    offline = " from a downloaded installer (normally: click in Native Access)"
+    k8_install = kontakt8_commands.add_parser("install", help="install Kontakt 8" + offline)
+    k8_install.add_argument("source", metavar="file|url", help=source_help)
+    k8_update = kontakt8_commands.add_parser("update", help="update Kontakt 8" + offline)
+    k8_update.add_argument("source", metavar="file|url", help=source_help)
     kontakt8_commands.add_parser("uninstall", help="remove Kontakt 8 from the prefix")
     hook = kontakt8_commands.add_parser(
         "hook",
@@ -169,13 +171,12 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def native_access_main(argv: list[str] | None = None) -> int:
-    """Entry point for `native-access`: the desktop entry, the browser
-    login callback, and the command a user types.  Sets the prefix up on
-    first use, then launches Native Access.
+    """Entry point for `native-access`: the desktop entry, the browser login
+    callback, and the command a user types.  Identical to `ni launch`.
     """
     parser = argparse.ArgumentParser(
         prog="native-access",
-        description="Start Native Access under Wine (first run sets everything up).",
+        description="Start Native Access under Wine (the same as `ni launch`).",
     )
     parser.add_argument(
         "-V", "--version", action="version", version=f"ni-wine {__version__}"
@@ -187,19 +188,14 @@ def native_access_main(argv: list[str] | None = None) -> int:
         metavar="PATH",
         help="Wine prefix to use (default: ~/.wine-ni or $NI_WINE_PREFIX)",
     )
-    parser.add_argument("--reinstall", action="store_true", help="wipe the prefix and set up again")
+    parser.add_argument("--reinstall", action="store_true", help=argparse.SUPPRESS)  # old spelling of `ni reinstall`
     parser.add_argument("url", nargs="?", default=None, help="native-access:// callback URL")
     args = parser.parse_args(argv)
 
-    prefix = (args.prefix or config.default_prefix()).expanduser()
+    ni_args = ["--prefix", str(args.prefix)] if args.prefix else []
     if args.reinstall:
-        from .launch import run_reinstall
-
-        run_reinstall(prefix)
-        return 0
-    from .launch import run_launch
-
-    return run_launch(prefix, url=args.url)
+        return main([*ni_args, "reinstall"])
+    return main([*ni_args, "launch", *([args.url] if args.url else [])])
 
 
 def entry() -> None:
