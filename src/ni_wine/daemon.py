@@ -66,12 +66,37 @@ def service_registered(prefix: Path) -> bool:
     return f"\\\\Services\\\\{SERVICE}]" in text
 
 
-def _daemons() -> list[tuple[int, str | None]]:
-    """(pid, prefix) of every NTKDaemon.exe on the machine.
+def _prefix_of(pid: int) -> str | None:
+    """The prefix a Wine process belongs to, or None if it cannot be told.
 
-    The prefix comes from the process environment (Wine keeps WINEPREFIX in
-    it); None means it could not be read.
+    The process's working directory is inside its prefix's drive_c, and it
+    keeps pointing at the real directory even after the prefix was deleted
+    or replaced by a new one at the same path — unlike WINEPREFIX in the
+    environment, which is just a string.  A deleted prefix comes back as
+    "<path> (deleted)".
     """
+    try:
+        cwd = os.readlink(f"/proc/{pid}/cwd")
+    except OSError:
+        return None
+    marker = "/drive_c/"
+    if marker not in cwd:
+        return None
+    prefix = cwd.split(marker, 1)[0]
+    return prefix + " (deleted)" if cwd.endswith("(deleted)") else prefix
+
+
+def _same_prefix(found: str, prefix: Path) -> bool:
+    if found.endswith("(deleted)"):
+        return False
+    try:
+        return os.path.samefile(found, prefix)
+    except OSError:
+        return False
+
+
+def _daemons() -> list[tuple[int, str | None]]:
+    """(pid, prefix) of every NTKDaemon.exe on the machine (see _prefix_of)."""
     result = subprocess.run(
         ["pgrep", "-f", r"NTKDaemon\.exe"], capture_output=True, text=True
     )
@@ -79,19 +104,11 @@ def _daemons() -> list[tuple[int, str | None]]:
     for pid in result.stdout.split():
         try:
             cmdline = Path(f"/proc/{pid}/cmdline").read_bytes()
-            environ = Path(f"/proc/{pid}/environ").read_bytes().split(b"\0")
         except OSError:
-            found.append((int(pid), None))
-            continue
+            continue  # gone already
         if b"NTKDaemon.exe" not in cmdline or b"pgrep" in cmdline:
             continue  # a shell whose command line mentions the name
-        prefix = str((Path.home() / ".wine").resolve())  # Wine's default
-        for entry in environ:
-            if entry.startswith(b"WINEPREFIX="):
-                value = entry[len(b"WINEPREFIX="):].decode(errors="replace")
-                prefix = str(Path(value).expanduser().resolve())
-                break
-        found.append((int(pid), prefix))
+        found.append((int(pid), _prefix_of(int(pid))))
     return found
 
 
@@ -100,8 +117,7 @@ def running(prefix: Path) -> bool:
 
     Unreadable environments count as a match, erring on the side of "up".
     """
-    wanted = str(prefix.expanduser().resolve())
-    return any(found in (wanted, None) for _, found in _daemons())
+    return any(found is None or _same_prefix(found, prefix) for _, found in _daemons())
 
 
 def foreign(prefix: Path) -> list[tuple[int, str]]:
@@ -113,22 +129,34 @@ def foreign(prefix: Path) -> list[tuple[int, str]]:
     products and licences.  Nothing in ni-wine can redirect that; the only
     safe move is to refuse to start until it is gone.
     """
-    wanted = str(prefix.expanduser().resolve())
-    return [(pid, found) for pid, found in _daemons() if found not in (wanted, None)]
+    return [
+        (pid, found) for pid, found in _daemons()
+        if found is not None and not _same_prefix(found, prefix)
+    ]
 
 
 def foreign_problem(prefix: Path) -> str | None:
     others = foreign(prefix)
     if not others:
         return None
-    lines = [
-        f"an NTK daemon from another Wine prefix is running (pid {pid}, prefix {other}); "
-        "Native Access would connect to it and use that prefix's login and licences"
-        for pid, other in others
-    ]
+    lines = []
+    for pid, other in others:
+        if other.endswith("(deleted)"):
+            lines.append(
+                f"an NTK daemon of a prefix that no longer exists is still running "
+                f"(pid {pid}, was {other[:-10]}); it would answer for this prefix "
+                "with the old machine identity and licences"
+            )
+        else:
+            lines.append(
+                f"an NTK daemon from another Wine prefix is running (pid {pid}, prefix "
+                f"{other}); Native Access would connect to it and use that prefix's "
+                "login and licences"
+            )
     hint = (
-        "Stop it first, e.g. `WINEPREFIX=<that prefix> wine net stop "
-        f"{SERVICE}` with the Wine build that runs it, then try again"
+        "Stop it first: `WINEPREFIX=<that prefix> wine net stop "
+        f"{SERVICE}` with the Wine build that runs it (or kill the process if the "
+        "prefix is gone), then try again"
     )
     return "\n".join([*lines, hint])
 
