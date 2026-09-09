@@ -135,7 +135,11 @@ def _ni_command() -> tuple[list[str], str | None]:
     """
     argv0 = Path(sys.argv[0]) if sys.argv and sys.argv[0] else None
     if argv0 and argv0.name in ("ni", "native-access") and argv0.is_file():
-        return [str(argv0.resolve())], None
+        # `native-access` is the launcher entry point and takes no
+        # subcommands; the hook needs its sibling `ni`.
+        ni = argv0.resolve().with_name("ni")
+        if ni.is_file():
+            return [str(ni)], None
     package_root = Path(__file__).resolve().parent.parent
     return [sys.executable, "-m", "ni_wine.cli"], str(package_root)
 
