@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -161,11 +162,41 @@ class Wine:
     # -- registry file inspection (no wineserver round-trip) ----------------
 
     def user_reg_text(self) -> str:
-        reg = self.prefix / "user.reg"
+        return self._reg_text("user.reg")
+
+    def system_reg_text(self) -> str:
+        return self._reg_text("system.reg")
+
+    def _reg_text(self, name: str) -> str:
         try:
-            return reg.read_text(encoding="utf-8", errors="replace")
+            return (self.prefix / name).read_text(encoding="utf-8", errors="replace")
         except OSError:
             return ""
+
+
+def prefix_in_use(prefix: Path) -> bool:
+    """Is any Wine process running inside *prefix* (NA, Kontakt, a daemon...)?
+
+    Judged by the working directory Wine gives its processes (inside the
+    prefix's drive_c), which stays valid when WINEPREFIX is unset or stale.
+    """
+    try:
+        wanted = os.stat(prefix)
+    except OSError:
+        return False
+    for entry in os.scandir("/proc"):
+        if not entry.name.isdigit():
+            continue
+        try:
+            cwd = os.readlink(f"/proc/{entry.name}/cwd")
+            if "/drive_c" not in cwd:
+                continue
+            found = os.stat(cwd.split("/drive_c", 1)[0])
+        except OSError:
+            continue
+        if (found.st_dev, found.st_ino) == (wanted.st_dev, wanted.st_ino):
+            return True
+    return False
 
 
 def foreign_prefix_users(prefix: Path) -> list[int]:
@@ -318,16 +349,21 @@ def apply_prefix_tweaks(wine: Wine) -> bool:
             wine.reg_add(key, value, data, reg_type=reg_type)
             changed = True
 
-    # Native Access's MSI registers its login-callback URL scheme under the
-    # literal, unexpanded name "${product.uri.scheme}" when run under Wine.
-    # Register the real scheme so browser logins can reach the app.
-    command = f'"{config.NA_EXE_WIN}" "%1"'
-    scheme_key = rf"HKCU\Software\Classes\{config.URL_SCHEME}"
-    if f'[Software\\\\Classes\\\\{config.URL_SCHEME}\\\\shell\\\\open\\\\command]' not in reg_text:
-        wine.reg_add(scheme_key, "", f"URL:{config.URL_SCHEME}")
-        wine.reg_add(scheme_key, "URL Protocol", "")
-        wine.reg_add(rf"{scheme_key}\shell\open\command", "", command)
-        info(f"registered {config.URL_SCHEME}:// URL scheme in the prefix")
+    from . import urlscheme  # avoids an import cycle
+
+    if urlscheme.ensure(wine):
         changed = True
 
     return changed
+
+
+def _reg_default(reg_text: str, key: str) -> str | None:
+    """The default value of *key* (e.g. Software\\Classes\\x) in a .reg dump."""
+    escaped = key.replace("\\", "\\\\")
+    match = re.search(
+        rf"^\[{re.escape(escaped)}\] \d+\n(?:#[^\n]*\n)*@=\"((?:[^\"\\]|\\.)*)\"",
+        reg_text, re.MULTILINE,
+    )
+    if not match:
+        return None
+    return match.group(1).replace('\\"', '"').replace("\\\\", "\\")

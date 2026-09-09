@@ -130,6 +130,21 @@ Native Access reports the install done. Kontakt reads its licence only at
 start, so if you open it within those seconds it shows the demo dialog;
 close it and open it again.
 
+The demo dialog's **Activate** button works like on Windows: it opens
+Native Access's "Add Serial" dialog (starting Native Access if needed).
+Native Access's installer registers the `native-access://` URL scheme under
+a broken name when run under Wine, and Wine only honours machine-wide
+scheme registrations, so ni-wine registers the scheme itself (in HKLM,
+pointing at `~/.local/state/ni-wine/open-url.sh`, which runs `ni launch`
+with the URL).
+
+Every Native Access talks to *a* daemon through fixed localhost ports, not
+to the one of its own prefix. A daemon left running from a deleted or
+replaced prefix would therefore answer for the new one: you appear logged
+in, but products get activated for the old prefix's machine identity and
+show up as demo. `native-access` refuses to start while such a daemon runs
+and names it; `ni doctor` reports it too.
+
 ## Offline behavior
 
 Native Access has no offline mode. ni-wine detects the situation and tells
@@ -142,7 +157,8 @@ plugins keep working offline.
 the repairable ones. Native Access's own logs live at
 `~/.wine-ni/drive_c/users/Public/Documents/Native Instruments/Logs/`; the
 Kontakt installer hook logs to `~/.local/state/ni-wine/msi-shim.log` and
-`msi-hook.log`.
+`msi-hook.log`; URL opens from inside the prefix (Kontakt's Activate
+button) log to `open-url.log` next to them.
 
 ### "Please grant permission to Native Access to install dependencies"
 
