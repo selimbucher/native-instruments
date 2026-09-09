@@ -71,16 +71,19 @@ nix profile install github:selimbucher/native-instruments
 # or add the flake's packages.x86_64-linux.default to your system config
 ```
 
-A desktop entry for Native Access is installed with this package. On first
-launch it sets up the Wine prefix and installs Native Access.
+That is all. Start **Native Access** from your app launcher (or run
+`native-access`): the first start creates the Wine prefix and installs
+Native Access, then log in and install products, Kontakt 8 included. The
+commands below are for scripting and repair; none of them is a required
+step.
 
 ## Usage
 
 ```
 usage: ni [-h] [-V] [--prefix PATH] <command> ...
 
-  setup                   create the Wine prefix and install Native Access
-  launch [url]            launch Native Access (runs setup first if needed)
+  launch [url]            launch Native Access (sets the prefix up first if needed)
+  setup                   the setup step on its own (e.g. `--no-ui`, or to redo it)
   reinstall               wipe the Wine prefix and set everything up again
   kontakt8 install [src]  install Kontakt 8 (through Native Access, or from a file/URL)
   kontakt8 update [src]   update Kontakt 8 (through Native Access, or from a file/URL)
