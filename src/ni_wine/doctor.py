@@ -19,11 +19,11 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import config, daemon, msishim, powershell
+from . import config, daemon, msishim, powershell, urlscheme
 from .desktop import current_scheme_handler, ensure_url_handler
 from .launch import native_access_running, clear_updater_residue
 from .util import which_first
-from .wine import TRAY_DISABLED_MARKER, Wine, apply_prefix_tweaks
+from .wine import TRAY_DISABLED_MARKER, Wine, apply_prefix_tweaks, prefix_in_use
 
 # Chromium persists "Always allow <origin> to open <scheme> links" per
 # origin+scheme in the profile's Preferences JSON.  A deny is never stored
@@ -152,13 +152,13 @@ def _prefix_checks(prefix: Path) -> list[Check]:
         Check("tray-icon window disabled", tray_off,
               "" if tray_off else "run `ni doctor --fix`")
     )
-    scheme_registered = (
-        f"[Software\\\\Classes\\\\{config.URL_SCHEME}\\\\shell\\\\open\\\\command]"
-        in reg_text
-    )
+    scheme_registered = urlscheme.registered(Wine(prefix))
     checks.append(
-        Check("native-access:// registered in prefix", scheme_registered,
-              "" if scheme_registered else "run `ni doctor --fix`")
+        Check("native-access:// registered in prefix (Kontakt's Activate button)",
+              scheme_registered,
+              "" if scheme_registered
+              else "armed by `native-access` or `ni doctor --fix` "
+                   "(a fresh registration shows here once Wine has flushed the registry)")
     )
 
     updater = config.updater_dir(prefix)
@@ -328,7 +328,7 @@ def run_doctor(prefix: Path, *, fix: bool = False) -> int:
     if fix:
         if config.drive_c(prefix).is_dir():
             wine = Wine(prefix)
-            if apply_prefix_tweaks(wine) and not native_access_running():
+            if apply_prefix_tweaks(wine) and not prefix_in_use(prefix):
                 # explorer.exe reads the tray settings only at startup.
                 wine.kill_server()
             clear_updater_residue(prefix)

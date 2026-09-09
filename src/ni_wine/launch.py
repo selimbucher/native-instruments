@@ -14,7 +14,7 @@ from .desktop import ensure_url_handler
 from .powershell import install_profile
 from .setup_cmd import run_setup
 from .util import die, guarded_rmtree, info, warn
-from .wine import Wine, apply_prefix_tweaks, foreign_prefix_users
+from .wine import Wine, apply_prefix_tweaks, foreign_prefix_users, prefix_in_use
 
 _OFFLINE_MESSAGE = (
     "No connection to native-instruments.com — Native Access has no offline "
@@ -144,8 +144,10 @@ def run_launch(prefix: Path, url: str | None = None) -> int:
         run_setup(prefix, ui=True)
 
     wine = Wine(prefix)
-    if apply_prefix_tweaks(wine) and not native_access_running():
-        # explorer.exe reads the tray settings only at startup.
+    # explorer.exe reads the tray settings only at startup -- but never
+    # take the server down under Kontakt or a plugin host (we may have been
+    # started by Kontakt's Activate button).
+    if apply_prefix_tweaks(wine) and not prefix_in_use(prefix):
         wine.kill_server()
     clear_updater_residue(prefix)
     ensure_url_handler(prefix, quiet=True)
