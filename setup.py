@@ -1,5 +1,5 @@
-"""Build hook: compile the msi shim into the package when a 32-bit mingw
-compiler is available (pip/pipx installs).  Distribution packages (flake,
+"""Build hook: compile the msi shim into the package (pip/pipx installs need a
+32-bit mingw compiler).  Distribution packages (flake,
 PKGBUILD) build it explicitly instead; see shim/README.md."""
 
 from __future__ import annotations
@@ -28,11 +28,10 @@ class build_py_with_shim(build_py):
                 )
                 shutil.copy2(SHIM / "msi_shim32.dll", TARGET)
             else:
-                print(
-                    "warning: i686-w64-mingw32-gcc not found — building without the msi "
-                    "shim; Native Access will not be able to install Kontakt "
-                    "(see shim/README.md)",
-                    file=sys.stderr,
+                raise SystemExit(
+                    "ni-wine needs a 32-bit mingw-w64 compiler (i686-w64-mingw32-gcc) to "
+                    "build the msi shim that lets Native Access install Kontakt; "
+                    "see shim/README.md"
                 )
         super().run()
 

@@ -1,34 +1,26 @@
 """Lay out Kontakt 8's files from its installer payload into a drive_c tree.
 
-NI's installer is a zip holding a 7z-extractable InstallAware exe, which
-carries an MSI plus an OFFLINE payload tree of hex-named directories.  The
-MSI's Directory/Component/File tables say where each payload file belongs
-on C:.  We replay that mapping ourselves instead of letting Wine's MSI
-engine run the package (it hangs — see shim/msi_shim.c).
+NI's InstallAware installer carries an MSI plus an OFFLINE payload tree of
+hex-named directories.  The MSI's Directory/Component/File tables say where
+each payload file belongs on C:.  We replay that mapping ourselves instead
+of letting Wine's MSI engine run the package (it hangs — see
+shim/msi_shim.c).
 
-Two entry points:
-
-- `plan_installer(zip_or_exe)` unpacks the installer with 7z (cached per
-  checksum; slow the first time) and plans the layout.
-- `plan_installer_dir(msi)` plans from a payload the installer has already
-  unpacked itself — the case when Native Access runs the installer and the
-  msi shim calls back into ni-wine.
-
-Both return a `Plan`; nothing in the prefix changes until `Plan.execute`,
-so callers can remove the old install only once the new one is verified.
+`plan_installer_dir(msi)` plans from the payload the installer has unpacked
+itself (the msi shim calls back into ni-wine at that point) and returns a
+`Plan`; nothing in the prefix changes until `Plan.execute`, so the old
+install is removed only once the new one is verified.
 """
 
 from __future__ import annotations
 
 import hashlib
-import os
 import shutil
 import subprocess
-import zipfile
 from pathlib import Path
 
 from . import config
-from .util import die, guarded_rmtree, info, which_first
+from .util import die, info, which_first
 
 
 def _infer_root(offline_dir: Path, path_segments: list[str]) -> str | None:
@@ -54,47 +46,6 @@ def _infer_root(offline_dir: Path, path_segments: list[str]) -> str | None:
     if any(f.endswith(".rtf") for f in sample_files):
         return "Program Files/Native Instruments/Kontakt 8"
     return None
-
-
-def _extract_payload(zip_path: Path, cache: Path) -> None:
-    """Unpack zip → exe → MSI + OFFLINE tree into *cache* (skips if done)."""
-    if (cache / ".done").exists():
-        info(f"using cached extraction at {cache}")
-        return
-
-    # Drop caches of other installer versions so the cache dir stays bounded.
-    cache_root = cache.parent
-    for old in cache_root.glob("cache-*"):
-        if old != cache:
-            guarded_rmtree(old)
-    guarded_rmtree(cache)
-    cache.mkdir(parents=True)
-
-    if zipfile.is_zipfile(zip_path):
-        info("extracting zip...")
-        with zipfile.ZipFile(zip_path) as zf:
-            zf.extractall(cache / "zip")
-    else:
-        # Native Access downloads the bare setup exe for some artifacts.
-        (cache / "zip").mkdir(parents=True, exist_ok=True)
-        try:
-            os.link(zip_path, cache / "zip" / zip_path.name)
-        except OSError:
-            shutil.copy2(zip_path, cache / "zip" / zip_path.name)
-    exes = list((cache / "zip").rglob("*.exe"))
-    if not exes:
-        die("no .exe found inside the installer zip")
-
-    seven_zip = which_first("7z", "7zz", "7za")
-    if not seven_zip:
-        die("7z not found (install p7zip / 7zip)")
-    info("extracting installer exe (slow, cached after first run)...")
-    subprocess.run(
-        [seven_zip, "x", str(exes[0]), f"-o{cache}/exe", "-y"],
-        check=True,
-        stdout=subprocess.DEVNULL,
-    )
-    (cache / ".done").touch()
 
 
 def _dump_msi_tables(msi: Path, idt_dir: Path) -> None:
@@ -305,27 +256,6 @@ def _plan(msi: Path, offline: Path, idt_dir: Path) -> Plan:
     if not copy_list:
         die("the installer's MSI tables map to no files — layout changed?")
     return Plan(copy_list, offline)
-
-
-def plan_installer(zip_path: Path) -> Plan:
-    """Unpack *zip_path* (installer zip or setup exe) and plan its layout.
-
-    Nothing in the prefix is touched until `Plan.execute` runs.
-    """
-    zip_path = zip_path.resolve()
-    cache = config.cache_dir() / "kontakt8" / f"cache-{_file_hash(zip_path)}"
-
-    _extract_payload(zip_path, cache)
-
-    msis = list((cache / "exe").rglob("*.msi"))
-    if not msis:
-        die("no .msi found in extracted installer")
-    msi = msis[0].resolve()
-
-    offline_dirs = [p for p in (cache / "exe").rglob("OFFLINE") if p.is_dir()]
-    if not offline_dirs:
-        die("no OFFLINE payload directory found in extracted installer")
-    return _plan(msi, offline_dirs[0].resolve(), cache / "idt")
 
 
 def _setup_exe_near(msi: Path) -> Path | None:

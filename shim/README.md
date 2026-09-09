@@ -69,7 +69,7 @@ No config file means nothing is ever diverted.
 
 ## Kill switch
 
-    ni kontakt8 hook remove
+    ni hook remove
 
 restores Wine's `msi.dll`, deletes `msi_wine.dll` and the config, and drops
 the registry override. Deleting `msi_shim.cfg` alone also disarms it. A Wine

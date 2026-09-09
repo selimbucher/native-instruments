@@ -66,7 +66,7 @@ def _dependency_checks() -> list[Check]:
         ("winetricks", ("winetricks",), True,
          "installs vcrun2022/powershell during setup (Debian: enable contrib)"),
         ("cabextract", ("cabextract",), True, "unpacks the VC++ redistributable"),
-        ("7z", ("7z", "7zz", "7za"), True, "unpacks the Kontakt installer (package: 7zip)"),
+        ("7z", ("7z", "7zz", "7za"), True, "reads the MSI inside the Kontakt installer (package: 7zip)"),
         ("msidump", ("msidump",), True, "reads MSI tables (package: msitools)"),
         ("pgrep", ("pgrep",), True, "process checks (package: procps)"),
         ("Xvfb", ("Xvfb",), True, "hides installer windows during setup"),
@@ -124,14 +124,14 @@ def _prefix_checks(prefix: Path) -> list[Check]:
     checks.append(
         Check("Kontakt 8 installed", config.kontakt8_exe(prefix).is_file(),
               "" if config.kontakt8_exe(prefix).is_file()
-              else "optional — install it through Native Access", required=False)
+              else "optional — install it in Native Access", required=False)
     )
     hook_ok = msishim.installed(prefix) and msishim.current(prefix)
     checks.append(
         Check("Kontakt installer hook (msi shim) installed", hook_ok,
               "" if hook_ok
               else f"{msishim.describe(prefix)} — Native Access cannot install "
-                   "Kontakt without it; armed by `ni launch` or `ni doctor --fix`",
+                   "Kontakt without it; armed by `native-access` or `ni doctor --fix`",
               required=False)
     )
 

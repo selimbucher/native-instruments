@@ -12,7 +12,6 @@ APP_NAME = "ni-wine"
 # Shopify, Sept 2026), so setup verifies it really got a Windows executable.
 NA_INSTALLER_URL = "https://storage.googleapis.com/ni-assets/downloads/Native-Access_2.exe"
 VCREDIST_URL = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
-KONTAKT8_ZIP_NAME = "Kontakt_8_Installer.zip"
 
 # The URL scheme Native Access registers for its browser-login callback.
 URL_SCHEME = "native-access"

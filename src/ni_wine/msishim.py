@@ -155,7 +155,7 @@ def _hook_text(prefix: Path) -> str:
         "# stdio is whatever Wine handed the installer (often a dead pipe), so\n"
         "# everything goes to the hook log.\n"
         f"{env}"
-        f'exec {command} --prefix "{prefix}" kontakt8 apply-installer "$@" '
+        f'exec {command} --prefix "{prefix}" apply-installer "$@" '
         f'>>"{hook_log()}" 2>&1 </dev/null\n'
     )
 
@@ -256,7 +256,7 @@ def ensure(wine: Wine, prefix: Path, *, quiet: bool = False) -> str | None:
             if fallback is None:
                 return (
                     f"{real} is missing and Wine's own msi.dll could not be found — "
-                    "run `ni kontakt8 hook remove` after reinstalling Wine"
+                    "run `ni hook remove` after reinstalling Wine"
                 )
             _put(fallback, real)
             changed = True

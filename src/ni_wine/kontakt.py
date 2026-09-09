@@ -1,16 +1,11 @@
-"""Install, update, and uninstall Kontakt 8 in the Wine prefix.
+"""What ni-wine does when Native Access installs Kontakt 8.
 
-Kontakt's own installer hangs under Wine (see shim/msi_shim.c), so the
-files are laid out by ni-wine from the installer's payload (extract.py).
-Two ways to get there:
-
-- Through Native Access, like any other product (the normal way): click
-  Install/Update there, its daemon downloads and runs the installer, and
-  when the installer reaches its MSI step the msi shim hands the work to
-  `apply_installer` below.  Native Access then sees an ordinary successful
-  install.  This needs the hook in the prefix; `native-access` arms it.
-- From a file or URL: `ni kontakt8 install|update <zip|exe|url>` unpacks
-  the installer with 7z and lays it out directly, no Native Access involved.
+Kontakt's own installer hangs under Wine (see shim/msi_shim.c).  Native
+Access still drives the install like for any other product: its daemon
+downloads and runs the installer, and when the installer reaches its MSI
+step the msi shim hands the work to `apply_installer` below, which lays the
+files out from the payload the installer already extracted.  Native Access
+then sees an ordinary successful install.
 """
 
 from __future__ import annotations
@@ -22,8 +17,8 @@ from datetime import datetime
 from pathlib import Path
 
 from . import config, msishim
-from .extract import plan_installer, plan_installer_dir
-from .util import die, download, guarded_rmtree, info
+from .extract import plan_installer_dir
+from .util import die, guarded_rmtree, info
 from .wine import foreign_prefix_users
 
 
@@ -109,51 +104,3 @@ def _apply_failed(prefix: Path, note, result: Path, message: str) -> int:
     (config.drive_c(prefix) / config.KONTAKT8_PRODUCT_JSON).unlink(missing_ok=True)
     result.write_text(f"ERR: {message}\n")
     return 1
-
-
-# --- from a file or URL ------------------------------------------------------
-
-
-def _obtain_installer(source: str) -> tuple[Path, bool]:
-    """Return (installer path, owned-by-ni-wine)."""
-    local = Path(source).expanduser()
-    if local.is_file():
-        info(f"using {local}")
-        return local, False
-    if "://" not in source:
-        die(f"{source} is neither a file nor a URL")
-    info("downloading Kontakt 8...")
-    name = source.rsplit("/", 1)[-1].split("?")[0] or config.KONTAKT8_ZIP_NAME
-    return download(source, config.cache_dir() / name, label="Kontakt 8 installer"), True
-
-
-def install(prefix: Path, source: str) -> None:
-    if config.kontakt8_exe(prefix).is_file():
-        info("Kontakt 8 is already installed — use `ni kontakt8 update` to update")
-        return
-    installer, owned = _obtain_installer(source)
-    plan = plan_installer(installer)
-    _guard_prefix_users(prefix)
-    plan.execute(config.drive_c(prefix), update=False)
-    if owned:
-        installer.unlink(missing_ok=True)
-    info("Kontakt 8 installed")
-
-
-def update(prefix: Path, source: str) -> None:
-    installer, owned = _obtain_installer(source)
-    plan = plan_installer(installer)  # verified before anything is removed
-    _guard_prefix_users(prefix)
-    info("removing old Kontakt 8 files...")
-    _remove_kontakt_files(prefix, include_product_json=False)
-    plan.execute(config.drive_c(prefix), update=True)
-    if owned:
-        installer.unlink(missing_ok=True)
-    info("Kontakt 8 updated")
-
-
-def uninstall(prefix: Path) -> None:
-    _guard_prefix_users(prefix)
-    info("removing Kontakt 8 files from the Wine prefix...")
-    _remove_kontakt_files(prefix, include_product_json=True)
-    info("Kontakt 8 uninstalled")
