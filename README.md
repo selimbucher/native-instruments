@@ -33,7 +33,7 @@ compiler for the msi shim.
 | wine (staging recommended, WoW64 fine) | runs everything |
 | winetricks | vcrun2022 + PowerShell during setup |
 | cabextract | msvcp140 fix |
-| 7z (`7zip` package; binary `7z`/`7zz`/`7za`) | installing Kontakt from a downloaded file |
+| 7z (`7zip` package; binary `7z`/`7zz`/`7za`) | reads the MSI inside the Kontakt installer |
 | msitools (`msidump`) | reads the Kontakt installer's MSI tables |
 | procps (`pgrep`) | process checks |
 | Xvfb | hides installer windows during setup |
@@ -49,9 +49,8 @@ sudo apt install winetricks cabextract 7zip msitools xvfb zenity procps pipx gcc
 pipx install git+https://github.com/selimbucher/native-instruments
 ```
 
-The pip build compiles the msi shim with `i686-w64-mingw32-gcc`; without
-it Native Access cannot install Kontakt, but everything else works and
-`ni kontakt8 update <file>` still does.
+The pip build compiles the msi shim with `i686-w64-mingw32-gcc` (the
+`gcc-mingw-w64-i686` package above) and refuses to build without it.
 
 ### Arch
 
@@ -82,15 +81,12 @@ step.
 ```
 usage: ni [-h] [-V] [--prefix PATH] <command> ...
 
-  launch [url]            start Native Access (first run sets the prefix up)
-  setup                   redo the first-time setup (e.g. with `--no-ui`)
-  reinstall               wipe the Wine prefix and set everything up again
-  kontakt8 install <src>  install Kontakt 8 from a downloaded installer zip/exe/URL
-  kontakt8 update <src>   update Kontakt 8 from a downloaded installer zip/exe/URL
-  kontakt8 uninstall      remove Kontakt 8 from the prefix
-  kontakt8 hook <action>  status | install | remove the Kontakt installer hook
-  fix-msvcp140            replace Wine's msvcp140 stubs with the real DLLs
-  doctor [--fix]          check dependencies, prefix health, login-URL wiring
+  launch [url]     start Native Access (first run sets the prefix up)
+  setup            redo the first-time setup (e.g. with `--no-ui`)
+  reinstall        wipe the Wine prefix and set everything up again
+  doctor [--fix]   check dependencies, prefix health, login-URL wiring
+  hook <action>    status | install | remove the Kontakt installer hook
+  fix-msvcp140     replace Wine's msvcp140 stubs with the real DLLs
 ```
 
 `native-access` is the same command as `ni launch` under the name the
@@ -98,14 +94,11 @@ desktop entry and the login callback use. Every command supports `--help`.
 
 ### Kontakt 8
 
-Install and update it in Native Access, like every other product. Keep
-your DAW closed while it runs: the files being replaced may be in use by
-bridged plugins, and ni-wine refuses to overwrite them while yabridge hosts
-use the prefix (Native Access then reports a failed install; close the DAW
-and click again).
-
-`ni kontakt8 install|update <file-or-url>` installs from an installer zip
-or setup exe you already have, without Native Access.
+Install, update and remove it in Native Access, like every other product.
+Keep your DAW closed while it runs: the files being replaced may be in use
+by bridged plugins, and ni-wine refuses to overwrite them while yabridge
+hosts use the prefix (Native Access then shows Kontakt as not installed;
+close the DAW and click again).
 
 Why the extra machinery: Kontakt's InstallAware installer opens its MSI as
 a database, rewrites the component table at runtime and then hands the
@@ -116,7 +109,7 @@ per-application DllOverride). It passes every call through to Wine's real
 msi except that one, which it answers by laying the files out from the
 payload the installer already extracted. Read `shim/README.md` for what the
 DLL does and how to verify it; it is built from source at package time and
-`ni kontakt8 hook remove` puts the prefix back to stock.
+`ni hook remove` puts the prefix back to stock.
 
 Environment: `NI_WINE_PREFIX` (prefix location, default `~/.wine-ni`),
 `WINE` (wine binary override), `NI_WINE_DEBUG` (keep Wine debug output).
