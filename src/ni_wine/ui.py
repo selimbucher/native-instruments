@@ -105,8 +105,25 @@ class Progress:
                 self._proc.stdin.write(f"# {message}\n{percent}\n")
                 self._proc.stdin.flush()
             except (BrokenPipeError, OSError):
-                # Dialog was closed by the user; keep going on the console.
-                self._proc = None
+                # Dialog gone (closed by the user, or yad/zenity exited):
+                # keep going on the console.  Dropping the pipe explicitly
+                # keeps Python from re-flushing it at exit and printing a
+                # "Exception ignored ... BrokenPipeError" traceback.
+                self._forget_dialog()
+
+    def _forget_dialog(self) -> None:
+        proc, self._proc = self._proc, None
+        if proc is None:
+            return
+        if proc.stdin:
+            try:
+                proc.stdin.close()
+            except OSError:
+                pass
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            proc.kill()
 
     def __exit__(
         self,
@@ -114,13 +131,7 @@ class Progress:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
-        if self._proc:
-            try:
-                if self._proc.stdin:
-                    self._proc.stdin.close()
-                self._proc.wait(timeout=5)
-            except (OSError, subprocess.TimeoutExpired):
-                self._proc.kill()
+        self._forget_dialog()
         if self._css_path:
             try:
                 os.unlink(self._css_path)
