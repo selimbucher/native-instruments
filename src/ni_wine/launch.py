@@ -148,7 +148,7 @@ def run_launch(prefix: Path, url: str | None = None) -> int:
         # explorer.exe reads the tray settings only at startup.
         wine.kill_server()
     clear_updater_residue(prefix)
-    ensure_url_handler(quiet=True)
+    ensure_url_handler(prefix, quiet=True)
     if not native_access_running():
         fix_offscreen_window_state(prefix)
 

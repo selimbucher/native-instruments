@@ -39,38 +39,44 @@ def current_scheme_handler() -> str | None:
     return handler or None
 
 
-def _native_access_exec() -> str:
-    """Exec= value for the launcher.
+def _ni_exec() -> str:
+    """The `ni` the desktop entry should run.
 
-    System installs stay a bare name (any PATH finds them, and the entry
-    keeps working across package upgrades).  Installs under $HOME (pipx's
-    ~/.local/bin) get an absolute path, because the desktop portal's PATH
-    usually doesn't include them.
+    A system install stays a bare name (any PATH finds it, and the entry
+    keeps working across package upgrades).  Anything under $HOME or in a
+    Nix store path gets its absolute path: the desktop portal's PATH does
+    not include pipx's ~/.local/bin, and a checkout or `nix shell` build
+    must not be silently replaced by an older `ni` on PATH.
     """
-    found = shutil.which("native-access")
-    if found and Path.home() in Path(found).parents:
-        return found
-    if found:
-        return "native-access"
-    sibling = Path(sys.argv[0]).resolve().parent / "native-access"
-    if sibling.is_file():
-        return str(sibling)
-    return "native-access"
+    running = Path(sys.argv[0]).resolve()
+    if running.name in ("ni", "native-access"):
+        candidate = running.parent / "ni"
+        if candidate.is_file():
+            found = shutil.which("ni")
+            if found and Path(found).resolve() == candidate and Path.home() not in candidate.parents:
+                return "ni"
+            return str(candidate)
+    found = shutil.which("ni")
+    if found and Path.home() not in Path(found).parents:
+        return "ni"
+    return found or "ni"
 
 
-def install_user_desktop_files(*, quiet: bool = False) -> None:
+def install_user_desktop_files(prefix: Path, *, quiet: bool = False) -> None:
     """Install our .desktop file and icon into the user's XDG data dir.
+
+    The Exec line names the prefix explicitly: the browser starts the login
+    callback without our environment, so `NI_WINE_PREFIX` would be lost and
+    the callback would open Native Access in the default prefix instead.
+    Whichever prefix was launched last owns the handler.
 
     Idempotent and cheap: nothing is rewritten when already up to date.
     """
     apps = config.data_home() / "applications"
     target = apps / config.DESKTOP_FILE_NAME
     content = _packaged("native-access.desktop")
-    exec_path = _native_access_exec()
-    if exec_path != "native-access":
-        content = content.replace(
-            "Exec=native-access %u", f'Exec="{exec_path}" %u'
-        )
+    exec_line = f'Exec={_ni_exec()} --prefix "{prefix}" launch %u'
+    content = content.replace("Exec=native-access %u", exec_line)
     if target.is_file() and target.read_text() == content:
         return
     apps.mkdir(parents=True, exist_ok=True)
@@ -85,14 +91,14 @@ def install_user_desktop_files(*, quiet: bool = False) -> None:
         info(f"installed {config.DESKTOP_FILE_NAME} to {apps}")
 
 
-def ensure_url_handler(*, quiet: bool = False) -> bool:
+def ensure_url_handler(prefix: Path, *, quiet: bool = False) -> bool:
     """Make sure native-access:// URLs are routed to us. Returns success.
 
     Always maintains a user-local copy of the .desktop file: a system copy
     from an older package version may lack the MimeType/%u wiring, and the
     user-local file shadows it under the same desktop-file ID.
     """
-    install_user_desktop_files(quiet=quiet)
+    install_user_desktop_files(prefix, quiet=quiet)
 
     if current_scheme_handler():
         return True
