@@ -113,6 +113,13 @@ def _prefix_checks(prefix: Path) -> list[Check]:
                   else "the winetricks profile hangs the NA installer and breaks "
                        "NA's daemon install — run `ni doctor --fix`")
         )
+    others = daemon.foreign(prefix)
+    checks.append(
+        Check("no NTK daemon from another prefix", not others,
+              "" if not others
+              else "; ".join(f"pid {pid} serves {other}" for pid, other in others)
+                   + " — Native Access would use that prefix's login; stop it first")
+    )
     is_running = daemon.running(prefix)
     checks.append(
         Check("NTK daemon running", is_running,

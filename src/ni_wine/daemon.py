@@ -66,35 +66,71 @@ def service_registered(prefix: Path) -> bool:
     return f"\\\\Services\\\\{SERVICE}]" in text
 
 
-def running(prefix: Path) -> bool:
-    """True if an NTKDaemon.exe belonging to *prefix* is running.
+def _daemons() -> list[tuple[int, str | None]]:
+    """(pid, prefix) of every NTKDaemon.exe on the machine.
 
-    pgrep alone would also match a daemon in some other Wine prefix; the
-    process environment (Wine keeps WINEPREFIX in it) tells them apart.
-    Unreadable environments count as a match, erring on the side of "up".
+    The prefix comes from the process environment (Wine keeps WINEPREFIX in
+    it); None means it could not be read.
     """
     result = subprocess.run(
         ["pgrep", "-f", r"NTKDaemon\.exe"], capture_output=True, text=True
     )
-    if result.returncode != 0:
-        return False
-    wanted = str(prefix.expanduser().resolve())
+    found: list[tuple[int, str | None]] = []
     for pid in result.stdout.split():
         try:
+            cmdline = Path(f"/proc/{pid}/cmdline").read_bytes()
             environ = Path(f"/proc/{pid}/environ").read_bytes().split(b"\0")
         except OSError:
-            return True
+            found.append((int(pid), None))
+            continue
+        if b"NTKDaemon.exe" not in cmdline or b"pgrep" in cmdline:
+            continue  # a shell whose command line mentions the name
+        prefix = str((Path.home() / ".wine").resolve())  # Wine's default
         for entry in environ:
             if entry.startswith(b"WINEPREFIX="):
                 value = entry[len(b"WINEPREFIX="):].decode(errors="replace")
-                if str(Path(value).expanduser().resolve()) == wanted:
-                    return True
+                prefix = str(Path(value).expanduser().resolve())
                 break
-        else:
-            # No WINEPREFIX in the environment: that daemon lives in ~/.wine.
-            if wanted == str((Path.home() / ".wine").resolve()):
-                return True
-    return False
+        found.append((int(pid), prefix))
+    return found
+
+
+def running(prefix: Path) -> bool:
+    """True if an NTKDaemon.exe belonging to *prefix* is running.
+
+    Unreadable environments count as a match, erring on the side of "up".
+    """
+    wanted = str(prefix.expanduser().resolve())
+    return any(found in (wanted, None) for _, found in _daemons())
+
+
+def foreign(prefix: Path) -> list[tuple[int, str]]:
+    """Daemons of *other* prefixes.
+
+    The daemon listens on fixed localhost ports and Native Access connects
+    to whatever answers there, so a daemon left running by another prefix
+    would serve this prefix's Native Access — with the other prefix's login,
+    products and licences.  Nothing in ni-wine can redirect that; the only
+    safe move is to refuse to start until it is gone.
+    """
+    wanted = str(prefix.expanduser().resolve())
+    return [(pid, found) for pid, found in _daemons() if found not in (wanted, None)]
+
+
+def foreign_problem(prefix: Path) -> str | None:
+    others = foreign(prefix)
+    if not others:
+        return None
+    lines = [
+        f"an NTK daemon from another Wine prefix is running (pid {pid}, prefix {other}); "
+        "Native Access would connect to it and use that prefix's login and licences"
+        for pid, other in others
+    ]
+    hint = (
+        "Stop it first, e.g. `WINEPREFIX=<that prefix> wine net stop "
+        f"{SERVICE}` with the Wine build that runs it, then try again"
+    )
+    return "\n".join([*lines, hint])
 
 
 def find_installer(prefix: Path) -> Path | None:
@@ -194,6 +230,9 @@ def ensure(wine: Wine, prefix: Path) -> str | None:
     """
     if not config.na_exe(prefix).is_file():
         return None  # nothing to guard yet; setup will install both
+    problem = foreign_problem(prefix)
+    if problem:
+        return problem
     if not installed(prefix) or not service_registered(prefix):
         what = "not installed" if not installed(prefix) else "not registered as a service"
         info(f"NTK daemon is {what} — installing it")
