@@ -125,6 +125,11 @@ loads the plugin. The licence is bound to the prefix's machine identity
 (`MachineGuid`): recreating the prefix means activating again in Native
 Access, while updating Kontakt does not touch it.
 
+Activation of a freshly installed product happens a few seconds after
+Native Access reports the install done. Kontakt reads its licence only at
+start, so if you open it within those seconds it shows the demo dialog;
+close it and open it again.
+
 ## Offline behavior
 
 Native Access has no offline mode. ni-wine detects the situation and tells
