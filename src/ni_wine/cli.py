@@ -13,10 +13,9 @@ examples:
   ni launch          start Native Access (first run sets the prefix up);
                      `native-access` is the same command
   ni doctor --fix    diagnose and repair common problems
-  ni hook status     state of the Kontakt installer hook (msi shim)
 
 Kontakt 8 is installed, updated and removed in Native Access like every
-other product; the hook makes its installer work under Wine.
+other product.
 
 environment:
   NI_WINE_PREFIX   Wine prefix location (default: ~/.wine-ni)
@@ -69,16 +68,6 @@ def _build_parser() -> argparse.ArgumentParser:
         "--yes", action="store_true", help="skip the confirmation prompt"
     )
 
-    hook = commands.add_parser(
-        "hook",
-        help="the Kontakt installer hook (msi shim): status, install/refresh, or remove",
-    )
-    hook.add_argument(
-        "hook_action",
-        choices=("status", "install", "remove"),
-        metavar="status|install|remove",
-        help="remove = the prefix uses Wine's own msi again",
-    )
     # Internal: what the hook script calls from inside Wine.  Unlisted.
     apply = commands.add_parser("apply-installer")
     apply.add_argument("package")
@@ -96,24 +85,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     return parser
-
-
-def _hook(args: argparse.Namespace, prefix: Path) -> int:
-    from . import msishim
-    from .launch import ensure_prefix_exists
-    from .util import die, info
-    from .wine import Wine
-
-    ensure_prefix_exists(prefix)
-    wine = Wine(prefix)
-    if args.hook_action == "install":
-        problem = msishim.ensure(wine, prefix)
-        if problem:
-            die(problem)
-    elif args.hook_action == "remove":
-        msishim.remove(wine, prefix)
-    info(f"Kontakt installer hook: {msishim.describe(prefix, wine)}")
-    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -135,8 +106,6 @@ def main(argv: list[str] | None = None) -> int:
 
         run_reinstall(prefix, assume_yes=args.yes)
         return 0
-    if args.command == "hook":
-        return _hook(args, prefix)
     if args.command == "apply-installer":
         from .kontakt import apply_installer
 

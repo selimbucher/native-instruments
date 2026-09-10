@@ -243,8 +243,8 @@ def ensure(wine: Wine, prefix: Path, *, quiet: bool = False) -> str | None:
             fallback = _wine_builtin_msi(wine)
             if fallback is None:
                 return (
-                    f"{real} is missing and Wine's own msi.dll could not be found — "
-                    "run `ni hook remove` after reinstalling Wine"
+                    f"{real} is missing and Wine's own msi.dll could not be found; "
+                    "reinstall Wine, then start Native Access again"
                 )
             _put(fallback, real)
             changed = True
@@ -265,27 +265,3 @@ def ensure(wine: Wine, prefix: Path, *, quiet: bool = False) -> str | None:
     if changed and not quiet:
         info("Kontakt installer hook (msi shim) installed in the prefix")
     return None
-
-
-def remove(wine: Wine, prefix: Path) -> None:
-    """Put the prefix back to stock: Wine's msi, no config, no override."""
-    sw = syswow64(prefix)
-    shim = sw / SHIM_FILE
-    real = sw / REAL_FILE
-    if is_shim(shim):
-        if real.is_file() and is_wine_builtin(real):
-            _put(real, shim)
-        else:
-            fallback = _wine_builtin_msi(wine)
-            if fallback is None:
-                warn(f"cannot restore Wine's msi.dll in {sw}: no copy found; "
-                     "reinstall Wine or re-run `wineboot -u` for this prefix")
-            else:
-                _put(fallback, shim)
-    real.unlink(missing_ok=True)
-    (sw / CFG_FILE).unlink(missing_ok=True)
-    hook_script().unlink(missing_ok=True)
-    result_file().unlink(missing_ok=True)
-    if override_registered(wine):
-        wine.reg_delete(_OVERRIDE_KEY)
-    info("Kontakt installer hook removed — the prefix uses Wine's msi again")
