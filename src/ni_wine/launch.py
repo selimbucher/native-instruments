@@ -9,7 +9,7 @@ import socket
 import subprocess
 from pathlib import Path
 
-from . import config, daemon, msishim
+from . import config, daemon, kontakt, msishim
 from .desktop import ensure_url_handler
 from .powershell import install_profile
 from .setup_cmd import run_setup
@@ -173,6 +173,11 @@ def run_launch(prefix: Path, url: str | None = None) -> int:
     problem = msishim.ensure(wine, prefix)
     if problem:
         warn(f"Kontakt installer hook not armed: {problem}")
+
+    # A Kontakt laid out by an older ni-wine lacks the registry values the
+    # daemon judges installs by; Native Access would offer to install it again.
+    if kontakt.repair_registry(prefix):
+        info("registered the existing Kontakt 8 install for Native Access")
 
     args = [str(config.na_exe(prefix))]
     if url:
