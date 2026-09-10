@@ -19,7 +19,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import config, daemon, msishim, powershell, urlscheme
+from . import config, daemon, kontakt, msishim, powershell, urlscheme
 from .desktop import current_scheme_handler, ensure_url_handler
 from .launch import native_access_running, clear_updater_residue
 from .util import which_first
@@ -128,6 +128,14 @@ def _prefix_checks(prefix: Path) -> list[Check]:
                    "Access hangs on 'grant permission' without it",
               required=False)
     )
+    if config.kontakt8_exe(prefix).is_file():
+        registered = kontakt.registry_complete(prefix)
+        checks.append(
+            Check("Kontakt 8 registered for Native Access", registered,
+                  "" if registered
+                  else "Native Access would show it as not installed after a "
+                       "refresh — run `ni doctor --fix`")
+        )
     checks.append(
         Check("Kontakt 8 installed", config.kontakt8_exe(prefix).is_file(),
               "" if config.kontakt8_exe(prefix).is_file()
@@ -339,6 +347,8 @@ def run_doctor(prefix: Path, *, fix: bool = False) -> int:
             problem = msishim.ensure(wine, prefix, quiet=True)
             if problem:
                 fix_notes.append(Check("Kontakt installer hook", False, problem))
+            if kontakt.repair_registry(prefix):
+                fix_notes.append(Check("Kontakt 8 registry values written", True))
         ensure_url_handler(prefix)
 
     checks = [

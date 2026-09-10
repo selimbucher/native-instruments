@@ -15,6 +15,7 @@ install is removed only once the new one is verified.
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -121,6 +122,39 @@ def _find_offline(msi: Path) -> Path | None:
     return None
 
 
+KONTAKT8_INSTALL_DIR = "C:\\Program Files\\Native Instruments\\Kontakt 8\\"
+KONTAKT8_CONTENT_DIR = "C:\\Program Files\\Common Files\\Native Instruments\\Kontakt 8\\"
+KONTAKT8_VST3_DIR = "C:\\Program Files\\Common Files\\VST3\\"
+
+# What the MSI's Registry table writes for the product (the rows under
+# HKLM\Software\Native Instruments\Kontakt 8; the daemon's
+# evaluateInstallationState wants InstallDir/ContentDir there, and its
+# "roll forward" of the install state reads the rest).  The MSI also
+# writes InstallAAX64Dir, which no plugin host on Linux uses.
+KONTAKT8_REGISTRY = (
+    ("InstallDir", KONTAKT8_INSTALL_DIR),
+    ("ContentDir", KONTAKT8_CONTENT_DIR),
+    ("ContentVersion", "4.0"),
+    ("InstallVST364Dir", KONTAKT8_VST3_DIR),
+)
+
+
+def write_product_record(out_dir: Path) -> None:
+    """The install record the MSI's InstallAware wrapper writes; the daemon
+    reads it alongside the registry values (kontakt.py)."""
+    json_dir = out_dir / "users/Public/Documents/Native Instruments/installed_products"
+    json_dir.mkdir(parents=True, exist_ok=True)
+    (json_dir / "Kontakt 8.json").write_text(
+        json.dumps(
+            {
+                "ContentDir": KONTAKT8_CONTENT_DIR,
+                "ContentVersion": "4.0.0",
+                "InstallDir": KONTAKT8_INSTALL_DIR,
+            }
+        )
+    )
+
+
 class Plan:
     """Everything needed to lay a payload out, computed before touching the prefix."""
 
@@ -143,13 +177,7 @@ class Plan:
             1 for f in self.offline.rglob("*") if f.is_file() and str(f) not in referenced
         )
 
-        # Minimal product manifest — the full manifest the MSI would write
-        # confuses NTKDaemon under Wine (it flags the install as broken).
-        json_dir = out_dir / "users/Public/Documents/Native Instruments/installed_products"
-        json_dir.mkdir(parents=True, exist_ok=True)
-        (json_dir / "Kontakt 8.json").write_text(
-            '{"InstallDir":"C:\\\\Program Files\\\\Native Instruments\\\\Kontakt 8\\\\"}'
-        )
+        write_product_record(out_dir)
 
         info(f"done: {copied} files copied, {unmapped} payload files unused (expected)")
 

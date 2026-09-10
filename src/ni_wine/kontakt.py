@@ -17,9 +17,9 @@ from datetime import datetime
 from pathlib import Path
 
 from . import config, msishim
-from .extract import plan_installer_dir
+from .extract import KONTAKT8_REGISTRY, plan_installer_dir, write_product_record
 from .util import die, guarded_rmtree, info
-from .wine import foreign_prefix_users
+from .wine import Wine, foreign_prefix_users
 
 
 def _guard_prefix_users(prefix: Path) -> None:
@@ -81,6 +81,7 @@ def apply_installer(prefix: Path, package: str) -> int:
             note(f"payload verified ({len(plan.copy_list)} files); replacing Kontakt 8")
             _remove_kontakt_files(prefix, include_product_json=False)
             plan.execute(config.drive_c(prefix), update=True)
+            _write_registry(prefix)
     except SystemExit:  # die() inside the helpers; its message is in `captured`
         lines = [line for line in captured.getvalue().splitlines() if line.strip()]
         message = lines[-1].removeprefix("error: ") if lines else "failed"
@@ -96,11 +97,51 @@ def apply_installer(prefix: Path, package: str) -> int:
     return 0
 
 
+REGISTRY_KEY = r"HKLM\Software\Native Instruments\Kontakt 8"
+
+
+def registry_complete(prefix: Path) -> bool:
+    """Are the product's registry values there?  (Reads system.reg, which
+    Wine flushes with a short delay after a write.)"""
+    text = Wine(prefix).system_reg_text()
+    section = text.split("[Software\\\\Native Instruments\\\\Kontakt 8]", 1)
+    if len(section) < 2:
+        return False
+    body = section[1].split("\n[", 1)[0]
+    return all(f'"{name}"=' in body for name, _ in KONTAKT8_REGISTRY)
+
+
+def _write_registry(prefix: Path) -> None:
+    """Replay the MSI's Registry table rows for the product.
+
+    Without them the daemon's product scan finds Kontakt right after the
+    install (the install record is enough for that) but drops it on the
+    next full refresh, which evaluates the registry, and Native Access
+    offers to install it again.
+    """
+    wine = Wine(prefix)
+    for name, value in KONTAKT8_REGISTRY:
+        if not wine.reg_add(REGISTRY_KEY, name, value, kill_on_failure=False):
+            die(f"could not write {REGISTRY_KEY}\\{name}")
+    info("registered Kontakt 8 in the prefix registry")
+
+
+def repair_registry(prefix: Path) -> bool:
+    """Write the registry values for an installed Kontakt that lacks them
+    (installs made by earlier ni-wine versions).  Returns True if written."""
+    if not config.kontakt8_exe(prefix).is_file() or registry_complete(prefix):
+        return False
+    write_product_record(config.drive_c(prefix))
+    _write_registry(prefix)
+    return True
+
+
 def _apply_failed(prefix: Path, note, result: Path, message: str) -> int:
     """Report a failed apply.  The installer and the daemon ignore MSI and
     exit codes; Native Access only believes the product's install record,
     so drop it — the product shows as not installed and can be retried."""
     note(f"ERR {message}")
     (config.drive_c(prefix) / config.KONTAKT8_PRODUCT_JSON).unlink(missing_ok=True)
+    Wine(prefix).reg_delete(REGISTRY_KEY)  # the daemon believes these too
     result.write_text(f"ERR: {message}\n")
     return 1
