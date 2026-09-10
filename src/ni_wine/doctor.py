@@ -121,6 +121,13 @@ def _prefix_checks(prefix: Path) -> list[Check]:
                    + " — Native Access would use that prefix's login; stop it first")
     )
     is_running = daemon.running(prefix)
+    stale = daemon.stale_locks(prefix)
+    checks.append(
+        Check("no stale NI lock files", not stale,
+              "" if not stale
+              else f"{len(stale)} in ProgramData/boost_interprocess make the daemon's "
+                   "product scan take 15 minutes; removed by the next launch or `ni doctor --fix`")
+    )
     checks.append(
         Check("NTK daemon running", is_running,
               "" if is_running
@@ -341,6 +348,9 @@ def run_doctor(prefix: Path, *, fix: bool = False) -> int:
                 wine.kill_server()
             clear_updater_residue(prefix)
             powershell.install_profile(prefix)
+            removed = daemon.clear_stale_locks(prefix)
+            if removed:
+                fix_notes.append(Check(f"removed {removed} stale NI lock file(s)", True))
             problem = daemon.ensure(wine, prefix)
             if problem:
                 fix_notes.append(Check("NTK daemon repair", False, problem))

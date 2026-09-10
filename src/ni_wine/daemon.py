@@ -194,6 +194,48 @@ def install(wine: Wine, prefix: Path, *, display: str | None = None) -> str | No
     return None
 
 
+def stale_locks(prefix: Path) -> list[Path]:
+    """boost::interprocess lock files no process has open.
+
+    NI's daemon (1.32+) and apps keep per-product locks under
+    ProgramData/boost_interprocess/<boot stamp>/.  On Windows the boot stamp
+    changes every boot, so a lock file left by a killed process is ignored
+    after a reboot; under Wine the stamp is constant, the file stays, and the
+    daemon then spends three five-minute timeouts per scan on that product
+    while Native Access shows an empty library.
+    """
+    root = config.drive_c(prefix) / "ProgramData/boost_interprocess"
+    if not root.is_dir():
+        return []
+    candidates = [f for f in root.glob("*/*.lock") if f.is_file()]
+    if not candidates:
+        return []
+    held: set[str] = set()
+    for entry in os.scandir("/proc"):
+        if not entry.name.isdigit():
+            continue
+        try:
+            for fd in os.scandir(f"/proc/{entry.name}/fd"):
+                try:
+                    held.add(os.readlink(fd.path))
+                except OSError:
+                    pass
+        except OSError:
+            continue
+    return [f for f in candidates if str(f) not in held]
+
+
+def clear_stale_locks(prefix: Path) -> int:
+    removed = 0
+    for f in stale_locks(prefix):
+        try:
+            f.unlink()
+            removed += 1
+        except OSError:
+            pass
+    return removed
+
+
 def start(wine: Wine, prefix: Path, *, timeout: float = 90) -> str | None:
     """Start the service and wait until the daemon process is actually up.
 
@@ -260,6 +302,9 @@ def ensure(wine: Wine, prefix: Path) -> str | None:
             return f"{problem}\n{_STUCK_SCREEN}."
     if running(prefix):
         return None
+    removed = clear_stale_locks(prefix)
+    if removed:
+        info(f"removed {removed} stale lock file(s) left by a killed NI process")
     problem = start(wine, prefix)
     if problem:
         return (
