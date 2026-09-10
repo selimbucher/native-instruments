@@ -48,9 +48,11 @@ pipx install git+https://github.com/selimbucher/native-instruments
 ## Usage
 
 Start **Native Access** from your app launcher or run `native-access`.
-The first start creates the Wine prefix (`~/.wine-ni`) and installs Native
-Access, which takes a few minutes. Log in and install products. Upgrading
-ni-wine needs nothing further; the next start adapts the prefix.
+The first start sets up the Wine prefix at `~/.wine-ni` and installs
+Native Access into it, which takes a few minutes. Log in and install
+products; they land in that prefix, so that is the one to add with
+`yabridgectl`. Upgrading ni-wine needs nothing further; the next start
+adapts the prefix.
 
 `native-access` is `ni launch`, under the name the desktop entry and the
 browser login callback use. The rest of `ni`:
