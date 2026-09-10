@@ -1,4 +1,4 @@
-# Native Access & Kontakt 8 on Linux
+# Native Access 2 & Kontakt 8 on Linux
 
 [Native Access](https://www.native-instruments.com/en/specials/native-access-2/)
 under Wine, set up with one command. Products install from Native Access
