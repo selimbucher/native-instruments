@@ -122,8 +122,14 @@ def run_setup(prefix: Path, *, ui: bool = False) -> None:
         # NSIS silent mode: no wizard, and the compatibility warning dialog
         # is skipped.  The payload still needs a window driver (fails with
         # DISPLAY=""), so a display, hidden or real, stays attached.
-        wine.run([str(installer), "/S"], display=display)
+        result = wine.run([str(installer), "/S"], display=display)
         wine.kill_server()
+        if not config.na_exe(prefix).is_file():
+            die(
+                "the Native Access installer finished (exit code "
+                f"{result.returncode}) without installing Native Access; run "
+                "again with NI_WINE_DEBUG=1 to see Wine's output"
+            )
 
         progress.step("Installing NTKDaemon...", 78)
         # Native Access cannot install the daemon itself under Wine (its
