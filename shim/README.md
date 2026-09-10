@@ -67,11 +67,9 @@ Packages build the DLL from these sources at package time (see
 
 No config file means nothing is ever diverted.
 
-## Kill switch
+## Disarming it
 
-    ni hook remove
-
-restores Wine's `msi.dll`, deletes `msi_wine.dll` and the config, and drops
-the registry override. Deleting `msi_shim.cfg` alone also disarms it. A Wine
-upgrade that rewrites the prefix's builtins removes the shim by itself;
-`ni launch` puts it back.
+Delete `msi_shim.cfg` next to the DLL: with no config nothing is diverted
+and every call reaches Wine's msi. `ni reinstall` gives you a stock prefix.
+A Wine upgrade that rewrites the prefix's builtins removes the shim by
+itself; the next launch puts it back.
