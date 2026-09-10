@@ -28,7 +28,7 @@ from .wine import TRAY_DISABLED_MARKER, Wine, apply_prefix_tweaks, prefix_in_use
 # Chromium persists "Always allow <origin> to open <scheme> links" per
 # origin+scheme in the profile's Preferences JSON.  A deny is never stored
 # (removed from Chromium in 2020), so the only useful repair is seeding the
-# allow for NI's login origins — then the login callback opens without any
+# allow for NI's login origins; then the login callback opens without any
 # prompt.  Linux Chromium does not tamper-protect this key; the only rule is
 # to edit while the browser is closed (it rewrites Preferences every ~10 s).
 _NI_LOGIN_ORIGINS = (

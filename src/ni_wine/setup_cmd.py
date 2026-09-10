@@ -121,7 +121,7 @@ def run_setup(prefix: Path, *, ui: bool = False) -> None:
         progress.step("Installing Native Access...", 65)
         # NSIS silent mode: no wizard, and the compatibility warning dialog
         # is skipped.  The payload still needs a window driver (fails with
-        # DISPLAY=""), so a display — hidden or real — stays attached.
+        # DISPLAY=""), so a display, hidden or real, stays attached.
         wine.run([str(installer), "/S"], display=display)
         wine.kill_server()
 

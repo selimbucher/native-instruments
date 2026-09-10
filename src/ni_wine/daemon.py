@@ -1,28 +1,15 @@
-"""Keep the NTK daemon installed, registered, and running.
+"""Keep the NTK daemon installed and running before Native Access starts.
 
-Native Access talks to its NTK daemon (a Windows service) over ZeroMQ.  At
-startup it asks the daemon for its version; if nothing answers it tries to
-read the installed version with `wmic datafile … get Version`, which Wine's
-wmic does not implement, concludes "Daemon version is undefined" and
-reinstalls the daemon through @vscode/sudo-prompt:
+If NA finds no daemon at startup it tries to reinstall it through
+PowerShell `Start-Process -Verb runAs`; with the winetricks profile.ps1
+that fails on the quoted path and NA sits on "Please grant permission to
+Native Access to install dependencies" forever (README).  So: install the
+daemon from the installer NA ships if missing, `net start` it, check the
+process is really there, and refuse to launch NA otherwise.
 
-    cmd.exe /d /s /c "powershell.exe Start-Process
-        -FilePath "'C:\\users\\…\\Temp\\<uuid>\\execute.bat'" -WindowStyle hidden -Verb runAs"
-
-With the profile.ps1 of the winetricks PowerShell wrapper that call fails
-before any elevation happens: its Start-Process shim receives the path with
-the quotes still in it, throws "File not found", powershell.exe exits
-non-zero, sudo-prompt reports "User did not grant permission." and Native
-Access sits on *Please grant permission to Native Access to install
-dependencies* forever.  (The elevate.exe in NA's resources is unrelated —
-electron-updater uses it for NA's own self-update — and Wine never reads
-EnableLUA.)  ni-wine replaces that profile (see powershell.py), which makes
-NA's own path work again, but the daemon should still be up *before* Native
-Access starts: that skips a 30 s reinstall on every launch and does not
-depend on PowerShell at all.  This module makes it a guarantee rather than
-a hope: install the daemon from the installer NA ships when it is missing,
-start the service, verify it is actually running, and report a usable error
-instead of letting NA hang.
+NA connects to the daemon by localhost port, not by prefix, so a daemon
+of another prefix (or of a deleted one, still running) would answer with
+that prefix's login and machine identity.  foreign() catches those.
 """
 
 from __future__ import annotations
@@ -69,11 +56,9 @@ def service_registered(prefix: Path) -> bool:
 def _prefix_of(pid: int) -> str | None:
     """The prefix a Wine process belongs to, or None if it cannot be told.
 
-    The process's working directory is inside its prefix's drive_c, and it
-    keeps pointing at the real directory even after the prefix was deleted
-    or replaced by a new one at the same path — unlike WINEPREFIX in the
-    environment, which is just a string.  A deleted prefix comes back as
-    "<path> (deleted)".
+    Read from /proc/<pid>/cwd, which Wine puts inside drive_c.  Unlike
+    WINEPREFIX in the environment it follows the real directory: a prefix
+    deleted or replaced at the same path shows up as "<path> (deleted)".
     """
     try:
         cwd = os.readlink(f"/proc/{pid}/cwd")

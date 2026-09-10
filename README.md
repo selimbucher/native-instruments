@@ -1,61 +1,51 @@
 # Native Access & Kontakt 8 on Linux
 
 Run [Native Access](https://www.native-instruments.com/en/specials/native-access-2/)
-and Native Instruments products under Wine on Linux — including Kontakt 8,
-whose official installer does not work under Wine on its own.
+and Native Instruments products under Wine. Kontakt 8 included: its
+installer hangs in Wine's MSI engine, so ni-wine takes over that one step
+and Native Access installs, updates and activates Kontakt like any other
+product.
 
 ![Native Access running under Wine on Linux](docs/screenshot.png)
-
-- **One-command setup**: a dedicated Wine prefix (`~/.wine-ni`) with the
-  Wine tweaks Native Access needs, its NTK daemon installed and kept
-  running, and the PowerShell profile that lets NA's own dependency
-  install work.
-- **Kontakt 8 through Native Access**: click Install or Update in Native
-  Access like on Windows. Kontakt's installer hangs in Wine's MSI engine;
-  ni-wine steps in at exactly that point (a small forwarding `msi.dll`,
-  see below) and lays the files out itself, and the installer finishes
-  normally. Native Access shows a successful install and stays in sync.
 
 **This repository does NOT contain, grant access to, or distribute any
 software from Native Instruments in any way.** It only provides scripts and
 instructions for installing software you have legitimately obtained from
-Native Instruments; you need your own account to download and use their
+Native Instruments and you need your own account to download and use
 plugins and instruments.
 
 ## Install
 
-Runtime dependencies (the CLI itself is pure Python ≥ 3.11 with no pip
-packages). Building from source additionally needs a 32-bit mingw-w64
-compiler for the msi shim.
+The CLI is pure Python ≥ 3.11 with no pip packages. Runtime dependencies:
 
 | dependency | purpose |
 |---|---|
 | wine (staging recommended, WoW64 fine) | runs everything |
 | winetricks | vcrun2022 + PowerShell during setup |
 | cabextract | msvcp140 fix |
-| 7z (`7zip` package; binary `7z`/`7zz`/`7za`) | reads the MSI inside the Kontakt installer |
-| msitools (`msidump`) | reads the Kontakt installer's MSI tables |
+| 7z (`7zip` package; binary `7z`/`7zz`/`7za`) | reads the Kontakt installer |
+| msitools (`msidump`) | reads the Kontakt installer |
 | procps (`pgrep`) | process checks |
 | Xvfb | hides installer windows during setup |
-| zenity or yad | graphical setup progress |
-| xdotool (optional) | repositions off-screen windows on X11 desktops |
+| zenity or yad | setup progress dialog |
+| xdotool (optional) | repositions off-screen windows on X11 |
+
+Building from source needs a 32-bit mingw-w64 compiler as well (see
+[Kontakt 8](#kontakt-8) for what it compiles).
 
 ### Debian / Ubuntu
 
 ```sh
 sudo apt install winetricks cabextract 7zip msitools xvfb zenity procps pipx gcc-mingw-w64-i686
-# Debian 12's wine (8.0) is too old — use the WineHQ repo (winehq-staging).
+# Debian 12's wine (8.0) is too old, use the WineHQ repo (winehq-staging).
 # Debian keeps winetricks in "contrib"; enable that component.
 pipx install git+https://github.com/selimbucher/native-instruments
 ```
 
-The pip build compiles the msi shim with `i686-w64-mingw32-gcc` (the
-`gcc-mingw-w64-i686` package above) and refuses to build without it.
-
 ### Arch
 
-Install [`ni-wine` from the AUR](https://aur.archlinux.org/packages/ni-wine)
-— all dependencies are pulled in automatically:
+Install [`ni-wine` from the AUR](https://aur.archlinux.org/packages/ni-wine),
+all dependencies are pulled in automatically:
 
 ```sh
 yay -S ni-wine
@@ -70,13 +60,16 @@ nix profile install github:selimbucher/native-instruments
 # or add the flake's packages.x86_64-linux.default to your system config
 ```
 
-That is all. Start **Native Access** from your app launcher (or run
-`native-access`): the first start creates the Wine prefix and installs
-Native Access, then log in and install products, Kontakt 8 included. The
-commands below are for scripting and repair; none of them is a required
-step.
-
 ## Usage
+
+Start **Native Access** from your app launcher, or run `native-access`.
+The first start creates the Wine prefix (`~/.wine-ni`) and installs Native
+Access, which takes a few minutes. Log in, install products.
+
+Upgrading ni-wine needs nothing else. The next start adapts an existing
+prefix.
+
+Everything else is under `ni`:
 
 ```
 usage: ni [-h] [-V] [--prefix PATH] <command> ...
@@ -89,93 +82,93 @@ usage: ni [-h] [-V] [--prefix PATH] <command> ...
   fix-msvcp140     replace Wine's msvcp140 stubs with the real DLLs
 ```
 
-`native-access` is the same command as `ni launch` under the name the
-desktop entry and the login callback use. Every command supports `--help`.
-
-### Kontakt 8
-
-Install, update and remove it in Native Access, like every other product.
-Keep your DAW closed while it runs: the files being replaced may be in use
-by bridged plugins, and ni-wine refuses to overwrite them while yabridge
-hosts use the prefix (Native Access then shows Kontakt as not installed;
-close the DAW and click again).
-
-Why the extra machinery: Kontakt's InstallAware installer opens its MSI as
-a database, rewrites the component table at runtime and then hands the
-package to `MsiInstallProduct`; Wine's MSI engine never returns from that
-call. ni-wine installs a small forwarding `msi.dll` into the prefix's
-`syswow64` that is loaded only by the Kontakt installer process (a
-per-application DllOverride). It passes every call through to Wine's real
-msi except that one, which it answers by laying the files out from the
-payload the installer already extracted. Read `shim/README.md` for what the
-DLL does and how to verify it; it is built from source at package time and
-`ni hook remove` puts the prefix back to stock.
+`native-access` is `ni launch` under the name the desktop entry and the
+login callback use. Every command supports `--help`.
 
 Environment: `NI_WINE_PREFIX` (prefix location, default `~/.wine-ni`),
 `WINE` (wine binary override), `NI_WINE_DEBUG` (keep Wine debug output).
 
-## Activation
+## Kontakt 8
 
-Products are activated by Native Access's daemon, which stores a signed
-licence file per product under the prefix's
-`users/Public/Documents/Native Instruments/Native Access/ras3/`. Kontakt
-validates that file itself at launch — no daemon, no Native Access and no
-network are needed once it exists, and it does not matter which Wine build
-loads the plugin. The licence is bound to the prefix's machine identity
-(`MachineGuid`): recreating the prefix means activating again in Native
-Access, while updating Kontakt does not touch it.
+Install, update and remove it in Native Access. Close your DAW first:
+ni-wine will not replace Kontakt's files while yabridge hosts are using the
+prefix, and Native Access then shows Kontakt as not installed until you
+try again with the DAW closed.
 
-Activation of a freshly installed product happens a few seconds after
-Native Access reports the install done. Kontakt reads its licence only at
-start, so if you open it within those seconds it shows the demo dialog;
-close it and open it again.
+Kontakt's installer (InstallAware) opens its MSI as a database, rewrites
+the component table at runtime and calls `MsiInstallProduct` once. Wine's
+MSI engine never returns from that call. Instead of tracing that bug in
+Wine, ni-wine puts a small forwarding `msi.dll` into the prefix's
+`syswow64` and registers it for the Kontakt installer process only. Every
+MSI call passes through to Wine's own msi except that one, which ni-wine
+answers by copying the payload the installer already extracted and writing
+the registry values the MSI would have written. The installer, and Native
+Access, see a normal successful install.
 
-The demo dialog's **Activate** button works like on Windows: it opens
-Native Access's "Add Serial" dialog (starting Native Access if needed).
-Native Access's installer registers the `native-access://` URL scheme under
-a broken name when run under Wine, and Wine only honours machine-wide
-scheme registrations, so ni-wine registers the scheme itself (in HKLM,
-pointing at `~/.local/state/ni-wine/open-url.sh`, which runs `ni launch`
-with the URL).
-
-Every Native Access talks to *a* daemon through fixed localhost ports, not
-to the one of its own prefix. A daemon left running from a deleted or
-replaced prefix would therefore answer for the new one: you appear logged
-in, but products get activated for the old prefix's machine identity and
-show up as demo. `native-access` refuses to start while such a daemon runs
-and names it; `ni doctor` reports it too.
-
-## Offline behavior
-
-Native Access has no offline mode. ni-wine detects the situation and tells
-you up front instead of letting the app spin. Installed instruments and
-plugins keep working offline.
+The DLL is about 300 lines of C, built from source at package time and
+never checked in. `shim/README.md` explains what it does and how to verify
+the binary. `ni hook remove` restores the stock prefix.
 
 ## Troubleshooting
 
-`ni doctor` diagnoses the common failure modes; `ni doctor --fix` repairs
-the repairable ones. Native Access's own logs live at
-`~/.wine-ni/drive_c/users/Public/Documents/Native Instruments/Logs/`; the
-Kontakt installer hook logs to `~/.local/state/ni-wine/msi-shim.log` and
-`msi-hook.log`; URL opens from inside the prefix (Kontakt's Activate
-button) log to `open-url.log` next to them.
+`ni doctor` checks the usual suspects and `ni doctor --fix` repairs what it
+can. Logs:
+
+- Native Access and its daemon:
+  `~/.wine-ni/drive_c/users/Public/Documents/Native Instruments/Logs/`
+- Kontakt installs: `~/.local/state/ni-wine/msi-shim.log` and
+  `msi-hook.log`
+- The Activate button and other URL opens from inside the prefix:
+  `~/.local/state/ni-wine/open-url.log`
+
+### Kontakt opens as "Kontakt 8 Demo"
+
+Activation is done by Native Access's daemon, a few seconds after an
+install finishes, and stored as a signed licence file per product under
+`users/Public/Documents/Native Instruments/Native Access/ras3/` in the
+prefix. Kontakt checks that file itself at start. No daemon, no network
+and no particular Wine build is needed once it exists, and it survives
+reboots and Kontakt updates.
+
+If Kontakt shows the demo dialog anyway:
+
+- You opened it within seconds of the install. Close and reopen it.
+- The prefix was recreated. The licence is bound to the prefix's machine
+  identity, so open Native Access once; the daemon activates again.
+- A daemon from an earlier, deleted prefix is still running. Native
+  Access talks to whichever daemon holds the localhost ports, so a
+  leftover one answers for the new prefix with the old machine identity:
+  you look logged in, but the licences it issues do not match.
+  `native-access` refuses to start in that state and names the process;
+  `ni doctor` reports it too. Stop it and start Native Access again.
+
+The dialog's **Activate** button opens Native Access's "Add Serial"
+dialog, as it does on Windows. It does not re-activate anything.
+
+### Native Access says Kontakt is not installed
+
+After a refresh, on a Kontakt installed by an older ni-wine: the daemon
+judges installs by registry values that only the MSI wrote. Starting
+`native-access` once writes them. During an install: your DAW was open,
+see above.
 
 ### "Please grant permission to Native Access to install dependencies"
 
 Native Access shows this when its NTK daemon (a Windows service) isn't
 running at startup and its own attempt to reinstall it fails. NA elevates
-that install through `powershell.exe Start-Process … -Verb runAs`; the
-`profile.ps1` shipped with the winetricks PowerShell wrapper replaces
-`Start-Process` with a shim that rejects the quoted path NA passes, so the
-install fails before anything runs. (Replacing `elevate.exe` or setting
-`EnableLUA` does nothing — NA doesn't use either for this.) The same
-profile also routes `Get-CimInstance` to a WMI shim that needs .NET 4.8,
-which hangs the Native Access *installer* on its "already running?" check.
+that install through `powershell.exe Start-Process ... -Verb runAs`, and
+the `profile.ps1` from the winetricks PowerShell wrapper replaces
+`Start-Process` with a shim that rejects the quoted path NA passes.
+Replacing `elevate.exe` or setting `EnableLUA` does nothing; NA doesn't
+use either for this.
 
 ni-wine installs its own `profile.ps1` (the original is kept as
-`profile.ps1.winetricks`), installs the daemon during setup, and starts the
-service before every launch; if the daemon can't be brought up, `ni launch`
+`profile.ps1.winetricks`), installs the daemon during setup and starts the
+service before every launch. If the daemon can't be started, `ni launch`
 stops with an explanation instead of starting NA into the stuck screen.
-Existing prefixes get the profile on the next `ni launch` or
-`ni doctor --fix`. Always start NA via `native-access` / `ni launch`, not
-`wine "Native Access.exe"`, and run `ni doctor` if you see the screen anyway.
+Always start NA via `native-access`, not `wine "Native Access.exe"`.
+
+### Native Access spins forever
+
+It has no offline mode. ni-wine checks the connection first and says so.
+Installed instruments and plugins work offline.

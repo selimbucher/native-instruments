@@ -187,7 +187,7 @@ def run_launch(prefix: Path, url: str | None = None) -> int:
     extra_env: dict[str, str] = {} if debug else {"WINEDEBUG": "-all"}
 
     # NA's Electron runtime crashes with "open EBADF" if any stdio fd is
-    # closed (desktop launchers don't guarantee them) — give it /dev/null
+    # closed (desktop launchers don't guarantee them), so give it /dev/null
     # instead of inheriting ours, unless debug output was asked for.
     result = wine.run(args, extra_env=extra_env, quiet=not debug)
     return result.returncode

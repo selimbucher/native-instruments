@@ -1,21 +1,9 @@
-"""Install and manage the msi shim that makes Native Access's own Kontakt
-install work under Wine.
+"""The msi shim in the prefix: install, refresh, remove (see shim/README.md).
 
-Kontakt's InstallAware installer hangs in Wine's MSI engine (see
-shim/msi_shim.c for the mechanism).  ni-wine puts a small forwarding
-msi.dll into the prefix's syswow64, keeps Wine's real msi next to it as
-msi_wine.dll, and registers a DllOverride so that only the Kontakt installer
-engine (`Kontakt 8 Setup PC.exe`) loads the shim — every other process keeps
-using Wine's builtin.  When the installer calls MsiInstallProduct on the
-Kontakt package, the shim runs a hook script (generated here) that calls
-back into ni-wine, which lays the files out from the payload the installer
-has already extracted, and the installer then finishes normally.  Native
-Access sees an ordinary successful install.
-
-Everything the shim does is driven by a config file next to it; ni-wine
-writes it.  All state lives in three files under syswow64 (msi.dll,
-msi_wine.dll, msi_shim.cfg), one registry key, and the hook script under
-the state directory.  `remove()` puts the prefix back exactly as it was.
+State: msi.dll (the shim), msi_wine.dll (Wine's real one) and msi_shim.cfg
+in syswow64, one DllOverrides key so that only `Kontakt 8 Setup PC.exe`
+loads it, and the hook script in the state dir that the shim runs when the
+installer reaches its MSI step.
 """
 
 from __future__ import annotations

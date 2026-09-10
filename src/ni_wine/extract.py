@@ -2,9 +2,8 @@
 
 NI's InstallAware installer carries an MSI plus an OFFLINE payload tree of
 hex-named directories.  The MSI's Directory/Component/File tables say where
-each payload file belongs on C:.  We replay that mapping ourselves instead
-of letting Wine's MSI engine run the package (it hangs — see
-shim/msi_shim.c).
+each payload file belongs on C:.  We replay that mapping ourselves since
+Wine's MSI engine hangs on the package (shim/msi_shim.c).
 
 `plan_installer_dir(msi)` plans from the payload the installer has unpacked
 itself (the msi shim calls back into ni-wine at that point) and returns a
@@ -26,7 +25,7 @@ from .util import die, info, which_first
 
 def _infer_root(offline_dir: Path, path_segments: list[str]) -> str | None:
     """Infer the Windows base install path for one OFFLINE payload group."""
-    # AAX plugin — not usable under Wine, skip entirely.
+    # AAX plugin, useless under Wine.
     if "Contents" in path_segments and "x64" in path_segments:
         return None
 

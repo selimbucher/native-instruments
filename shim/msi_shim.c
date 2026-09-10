@@ -1,22 +1,20 @@
 /*
- * ni-wine msi shim — a forwarding msi.dll for the Kontakt installer.
+ * ni-wine msi shim: a forwarding msi.dll for the Kontakt installer.
  *
  * Kontakt's InstallAware installer opens its MSI as a database, rewrites the
  * component table at runtime, then calls MsiInstallProductA once.  Under
- * Wine that one call never returns (Wine's MSI engine wedges on the rewritten
- * table).  This DLL sits in place of msi.dll for that installer process only
- * (a per-application DllOverride), forwards all 294 other exports unchanged
- * to Wine's real msi (kept next to it as msi_wine.dll), and handles
- * MsiInstallProduct itself: when the package matches a name listed in the
- * config file it runs the configured hook — ni-wine, which lays the files
- * out from the already-extracted payload — and reports the hook's result to
- * the installer.  Packages not listed are passed straight through.
+ * Wine that call never returns.  This DLL replaces msi.dll for that installer
+ * process only (per-application DllOverride), forwards the other 294 exports
+ * unchanged to Wine's real msi (kept next to it as msi_wine.dll) and handles
+ * MsiInstallProduct itself: for a package named in the config file it runs
+ * the hook (ni-wine, which lays the files out from the payload the installer
+ * already extracted) and returns the hook's result; anything else goes
+ * straight through.
  *
- * Deliberately tiny and dumb: no network, no crypto, kernel32 and user32
- * (wsprintfA) only.  All
- * policy (which package, which hook) is in msi_shim.cfg, written by ni-wine.
- * Verify with `winedump -j export msi_shim32.dll` (or objdump -p): every
- * export except MsiInstallProductA/W is a five-byte jump.
+ * Tiny on purpose: no network, no crypto, kernel32 and user32 (wsprintfA)
+ * only.  All policy (which package, which hook) is in msi_shim.cfg, written
+ * by ni-wine.  `winedump -j export msi_shim32.dll` shows every export except
+ * MsiInstallProductA/W as a five-byte jump.
  *
  * Config file (msi_shim.cfg, same directory as the DLL, one `key=value` per
  * line, CRLF or LF):
@@ -234,7 +232,7 @@ static UINT run_hook(const char *package)
 
 /* InstallAware ignores MsiInstallProduct's return value (its script carries
  * on and re-registers the product as installed), and the NTK daemon ignores
- * the installer's exit code — it rescans the product's install record.  So
+ * the installer's exit code and rescans the product's install record.  So
  * when the hook fails, ni-wine has removed that record and the installer
  * must not get the chance to write it back: end the process here.  The
  * outer setup wrapper cleans the temp files up on its own. */

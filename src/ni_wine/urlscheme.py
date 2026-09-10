@@ -1,18 +1,11 @@
-"""native-access:// inside the Wine prefix (Kontakt's "Activate" button).
+"""native-access:// URLs opened from inside the prefix (Kontakt's Activate
+button does ShellExecute("native-access://?action=add-serial")).
 
-Native Access's MSI registers its URL scheme under the literal, unexpanded
-name "${product.uri.scheme}" when run under Wine, so nothing inside the
-prefix can open such URLs: Kontakt's "Activate" button does a ShellExecute
-of `native-access://?action=add-serial` and silently fails.  The browser
-login callback is unaffected (it goes through the Linux handler).
-
-We register the scheme in HKLM -- Wine's HKEY_CLASSES_ROOT is
-HKLM\\Software\\Classes alone; it does not merge the per-user classes
-Windows would -- and point it at a small shell script that re-enters ni-wine
-(`ni launch <url>`): that starts the daemon if needed and hands the URL to a
-running Native Access, which opens its "add serial" dialog.  As with the
-installer hook, a script with its own stdio is needed: a launcher started
-straight from ShellExecute inherits Wine's dead stdio and never gets going.
+NA's installer registers the scheme under the unexpanded name
+"${product.uri.scheme}" under Wine, and Wine's HKCR only sees HKLM classes,
+so we register it in HKLM ourselves, pointing at a script that runs
+`ni launch <url>`.  A script, not the launcher directly: anything started
+straight from ShellExecute inherits Wine's dead stdio and hangs.
 """
 
 from __future__ import annotations
