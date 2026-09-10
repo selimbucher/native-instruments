@@ -23,7 +23,7 @@ from . import config, daemon, kontakt, msishim, powershell, urlscheme
 from .desktop import current_scheme_handler, ensure_url_handler
 from .launch import native_access_running, clear_updater_residue
 from .util import which_first
-from .wine import TRAY_DISABLED_MARKER, Wine, apply_prefix_tweaks, prefix_in_use
+from .wine import TRAY_DISABLED_MARKER, Wine, apply_prefix_tweaks, prefix_in_use, session_wine
 
 # Chromium persists "Always allow <origin> to open <scheme> links" per
 # origin+scheme in the profile's Preferences JSON.  A deny is never stored
@@ -60,9 +60,8 @@ class Check:
         return line
 
 
-def _dependency_checks() -> list[Check]:
+def _dependency_checks(prefix: Path) -> list[Check]:
     deps: list[tuple[str, tuple[str, ...], bool, str]] = [
-        ("wine", ("wine",), True, "runs Native Access"),
         ("winetricks", ("winetricks",), True,
          "installs vcrun2022/powershell during setup (Debian: enable contrib)"),
         ("cabextract", ("cabextract",), True, "unpacks the VC++ redistributable"),
@@ -73,7 +72,8 @@ def _dependency_checks() -> list[Check]:
         ("xdotool", ("xdotool",), False, "repositions off-screen windows on X11 desktops"),
         ("yad/zenity", ("yad", "zenity"), True, "graphical setup progress"),
     ]
-    checks = []
+    wine = os.environ.get("WINE") or session_wine(prefix) or which_first("wine")
+    checks = [Check("wine", bool(wine), wine or "not found (runs Native Access)")]
     for label, names, required, purpose in deps:
         found = which_first(*names)
         checks.append(
@@ -352,7 +352,7 @@ def run_doctor(prefix: Path, *, fix: bool = False) -> int:
         ensure_url_handler(prefix)
 
     checks = [
-        *_dependency_checks(),
+        *_dependency_checks(prefix),
         *_prefix_checks(prefix),
         *fix_notes,
         _elevation_check(prefix),

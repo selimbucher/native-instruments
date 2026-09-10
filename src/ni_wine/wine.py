@@ -16,11 +16,58 @@ from . import config
 from .util import die, info, warn
 
 
-def find_wine() -> str:
-    wine = os.environ.get("WINE") or shutil.which("wine")
-    if not wine:
+def session_wine(prefix: Path) -> str | None:
+    """The wine of the wineserver already running *prefix*, if there is one.
+
+    A prefix can only be used by one Wine build at a time; a second one
+    fails with "version mismatch".  On NixOS the build that started the
+    session (say, yabridge's, from the DAW) is rarely the one on our PATH,
+    so follow the running server: its cwd is the prefix's server directory
+    and its binary sits next to the matching wine.
+    """
+    try:
+        st = os.stat(prefix)
+    except OSError:
+        return None
+    server_dir = f"/tmp/.wine-{os.getuid()}/server-{st.st_dev:x}-{st.st_ino:x}"
+    for entry in os.scandir("/proc"):
+        if not entry.name.isdigit():
+            continue
+        try:
+            if os.readlink(f"/proc/{entry.name}/cwd") != server_dir:
+                continue
+            exe = Path(os.readlink(f"/proc/{entry.name}/exe"))
+        except OSError:
+            continue
+        if exe.name.startswith("wineserver") and (exe.parent / "wine").is_file():
+            return str(exe.parent / "wine")
+    return None
+
+
+def find_wine(prefix: Path | None = None) -> str:
+    wine = os.environ.get("WINE")
+    if wine:
+        return wine
+    on_path = shutil.which("wine")
+    running = session_wine(prefix) if prefix else None
+    if running and (not on_path or not _same_binary(running, on_path)):
+        if running not in _announced:
+            _announced.add(running)
+            info(f"using {running}: it already runs this prefix's Wine session")
+        return running
+    if not on_path:
         die("wine not found on PATH (set $WINE to override)")
-    return wine
+    return on_path
+
+
+_announced: set[str] = set()
+
+
+def _same_binary(a: str, b: str) -> bool:
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
 
 
 def find_wineserver(wine: str) -> str | None:
@@ -35,7 +82,7 @@ class Wine:
 
     def __init__(self, prefix: Path) -> None:
         self.prefix = prefix
-        self.wine = find_wine()
+        self.wine = find_wine(prefix)
         self.wineserver = find_wineserver(self.wine)
 
     def env(self, extra: dict[str, str] | None = None) -> dict[str, str]:

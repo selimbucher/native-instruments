@@ -231,6 +231,12 @@ def start(wine: Wine, prefix: Path, *, timeout: float = 90) -> str | None:
             return None
         time.sleep(0.5)
 
+    if "version mismatch" in output:
+        return (
+            f"the prefix is already running under a different Wine build than {wine.wine} "
+            "(\"version mismatch\"); close the program using it (your DAW's plugins?) or run "
+            "with WINE= pointing at that build"
+        )
     detail = f": {output[:200]}" if output else ""
     return f"`net start {SERVICE}` {status} and no NTKDaemon.exe process appeared{detail}"
 
