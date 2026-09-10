@@ -19,17 +19,7 @@ from pathlib import Path
 from . import config, msishim
 from .extract import KONTAKT8_REGISTRY, plan_installer_dir, write_product_record
 from .util import die, guarded_rmtree, info
-from .wine import Wine, foreign_prefix_users
-
-
-def _guard_prefix_users(prefix: Path) -> None:
-    """Refuse to overwrite Kontakt's files while a DAW has them loaded."""
-    hosts = foreign_prefix_users(prefix)
-    if hosts:
-        die(
-            f"{len(hosts)} plugin host(s) (yabridge) are using {prefix} — "
-            "Kontakt's files may be in use.  Close your DAW first, then try again."
-        )
+from .wine import Wine
 
 
 def _remove_kontakt_files(prefix: Path, *, include_product_json: bool) -> None:
@@ -76,7 +66,6 @@ def apply_installer(prefix: Path, package: str) -> int:
     try:
         with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
             msi = win_to_unix(prefix, package)
-            _guard_prefix_users(prefix)
             plan = plan_installer_dir(msi)  # validates the payload first
             note(f"payload verified ({len(plan.copy_list)} files); replacing Kontakt 8")
             _remove_kontakt_files(prefix, include_product_json=False)

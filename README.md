@@ -47,20 +47,18 @@ pipx install git+https://github.com/selimbucher/native-instruments
 
 ## Usage
 
-Start **Native Access** from your app launcher or run `native-access`.
-The first start sets up the Wine prefix at `~/.wine-ni` and installs
-Native Access into it, which takes a few minutes. Log in and install
-products; they land in that prefix, so that is the one to add with
-`yabridgectl`. Upgrading ni-wine needs nothing further; the next start
-adapts the prefix.
+Start **Native Access** from your app launcher or run `native-access`. The
+first start sets up the Wine prefix at `~/.wine-ni` and installs Native
+Access into it. Installed plugins land in that prefix.
 
-`native-access` is `ni launch`, under the name the desktop entry and the
-browser login callback use. The rest of `ni`:
+Do not launch with something like `wine "Native Access.exe"`.
+
+The cli:
 
 ```
 usage: ni [-h] [-V] [--prefix PATH] <command> ...
 
-  launch [url]     start Native Access (first run sets the prefix up)
+  launch [url]     start Native Access (same as native-access)
   setup            redo the first-time setup (e.g. with `--no-ui`)
   reinstall        wipe the Wine prefix and set everything up again
   doctor [--fix]   check dependencies, prefix health, login-URL wiring
@@ -71,10 +69,9 @@ Every command takes `--help`. Environment: `NI_WINE_PREFIX` (prefix
 location, default `~/.wine-ni`), `WINE` (wine binary override),
 `NI_WINE_DEBUG` (keep Wine debug output).
 
-Close your DAW before installing or updating Kontakt 8. Its installer does
-not run under Wine's MSI engine; ni-wine steps in at that point with a
-small `msi.dll` built from `shim/`, see `shim/README.md` if you want to
-know what it does.
+Kontakt 8's installer does not run under Wine's MSI engine; ni-wine steps
+in at that point with a small `msi.dll` built from `shim/`, see
+`shim/README.md` if you want to know what it does.
 
 If something goes wrong, `ni doctor --fix`. Native Access logs to
 `~/.wine-ni/drive_c/users/Public/Documents/Native Instruments/Logs/`,

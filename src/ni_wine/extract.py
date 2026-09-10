@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -168,7 +169,11 @@ class Plan:
             dest = out_dir / dest_dir / src.name
             dest.parent.mkdir(parents=True, exist_ok=True)
             if not dest.exists() or update:
-                shutil.copy2(src, dest)
+                # Copy then rename, never write into the existing file: a
+                # plugin host that has the old one mapped keeps its inode.
+                tmp = dest.with_name(dest.name + ".ni-wine-tmp")
+                shutil.copy2(src, tmp)
+                os.replace(tmp, dest)
             copied += 1
 
         referenced = {str(src) for src, _ in self.copy_list}
