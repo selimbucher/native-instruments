@@ -11,30 +11,6 @@ from types import TracebackType
 
 from .util import info, warn
 
-_YAD_CSS = """\
-window, .dialog {
-  background-color: #1a1a1a;
-  color: #ffffff;
-}
-label {
-  color: #ffffff;
-  margin-bottom: 8px;
-}
-progressbar trough {
-  background-color: #333333;
-  border-radius: 4px;
-}
-progressbar progress {
-  background-color: #ffffff;
-  border-radius: 4px;
-}
-.dialog-action-area {
-  margin: 0;
-  padding: 0;
-}
-"""
-
-
 class Progress:
     """Context manager that shows setup progress.
 
@@ -55,24 +31,25 @@ class Progress:
         if not self._enabled:
             return self
         if shutil.which("yad"):
+            # Follows the GTK theme, light or dark.  The one override: GTK
+            # themes dim the bar's text, and that is where the step shows.
             css = tempfile.NamedTemporaryFile(
                 "w", suffix=".css", delete=False, prefix="ni-wine-"
             )
-            css.write(_YAD_CSS)
+            css.write("progressbar text { color: @theme_fg_color; }\n")
             css.close()
             self._css_path = css.name
             cmd = [
                 "yad",
                 "--progress",
                 f"--title={self._title}",
-                "--text=Native Access Setup",
-                # No --percentage: yad 14+ dropped it (multi-bar progress) and
-                # refuses to start; the bar starts at 0 anyway.
+                "--text=<b>Setting up Native Access</b>",
+                "--align=left",
                 "--auto-close",
                 "--center",
-                "--width=480",
+                "--width=420",
                 "--no-buttons",
-                "--borders=16",
+                "--borders=20",
                 f"--gtkrc={css.name}",
             ]
         elif shutil.which("zenity"):
