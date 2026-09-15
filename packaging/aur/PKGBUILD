@@ -8,7 +8,7 @@ pkgdesc="Native Instruments software under Wine — setup, launch, and product m
 arch=('x86_64')
 url="https://github.com/selimbucher/native-instruments"
 license=('MIT')
-depends=('python' 'wine' 'winetricks' 'cabextract' '7zip' 'msitools'
+depends=('python' 'wine>=11' 'winetricks' 'cabextract' '7zip' 'msitools'
          'procps-ng' 'xorg-server-xvfb' 'zenity' 'xdg-utils'
          'desktop-file-utils' 'hicolor-icon-theme')
 makedepends=('git' 'python-build' 'python-installer' 'python-wheel' 'python-setuptools'

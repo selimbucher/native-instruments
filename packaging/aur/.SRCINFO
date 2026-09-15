@@ -12,7 +12,7 @@ pkgbase = ni-wine
 	makedepends = python-setuptools
 	makedepends = mingw-w64-gcc
 	depends = python
-	depends = wine
+	depends = wine>=11
 	depends = winetricks
 	depends = cabextract
 	depends = 7zip
