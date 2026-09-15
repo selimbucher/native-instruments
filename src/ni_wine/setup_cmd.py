@@ -10,14 +10,16 @@ from pathlib import Path
 from . import config, daemon, msishim
 from .msvcp140 import fix_msvcp140
 from .desktop import ensure_url_handler
-from .powershell import install_profile
+from .powershell import install_powershell, install_profile
 from .ui import Progress
-from .util import die, download, info, warn
+from .util import die, download, guarded_rmtree, info, warn
 from .wine import (
     Wine,
     apply_prefix_tweaks,
     check_wine_version,
+    foreign_prefix_users,
     hidden_display,
+    prefix_booted_by_ni_wine,
     record_prefix_build,
 )
 
@@ -100,9 +102,43 @@ def _winetricks(wine: Wine, verb: str, display: str | None) -> None:
             f"— full log: {log_path}")
 
 
+def _discard_incomplete_prefix(wine: Wine) -> None:
+    """Rebuild from scratch if a previous setup was interrupted.
+
+    A setup killed partway leaves the prefix booted (the build marker is
+    written right after wineboot) but without Native Access.  Re-running
+    the Wine steps over that half-built prefix fails in ways that are hard
+    to diagnose -- msiexec reports success while installing nothing, and
+    even a manual VC++ redist install hangs -- so the only reliable
+    recovery is to wipe and start clean.  A prefix that already has Native
+    Access, or one ni-wine never booted (someone pointed NI_WINE_PREFIX at
+    an existing Wine prefix), is left untouched.
+    """
+    prefix = wine.prefix
+    if not prefix_booted_by_ni_wine(prefix) or config.na_exe(prefix).is_file():
+        return
+    hosts = foreign_prefix_users(prefix)
+    if hosts:
+        die(
+            f"{len(hosts)} plugin host(s) (yabridge) are using {prefix} — "
+            "close your DAW, then run `ni setup` again."
+        )
+    warn("a previous setup was interrupted — rebuilding the Wine prefix from scratch")
+    wine.kill_server()
+    try:
+        wine.wait_server()
+    except subprocess.TimeoutExpired:
+        die(
+            "Wine processes from the interrupted setup are still running — "
+            "close them and run `ni setup` again"
+        )
+    guarded_rmtree(prefix)
+
+
 def run_setup(prefix: Path, *, ui: bool = False) -> None:
     wine = Wine(prefix)
     check_wine_version(wine)
+    _discard_incomplete_prefix(wine)
     config.drive_c(prefix).mkdir(parents=True, exist_ok=True)
 
     with Progress("Native Instruments Setup", enabled=ui) as progress, \
@@ -129,11 +165,12 @@ def run_setup(prefix: Path, *, ui: bool = False) -> None:
         _winetricks(wine, "vcrun2022", display)
 
         progress.step("Installing PowerShell...", 40)
-        _winetricks(wine, "powershell", display)
+        install_powershell(wine, display)
         # The wrapper's own profile.ps1 hangs the Native Access installer and
-        # breaks NA's daemon install; ours answers both correctly.
-        if not install_profile(prefix):
-            die(f"PowerShell profile not installed — is pwsh.exe missing under {prefix}?")
+        # breaks NA's daemon install; ours answers both correctly.  A no-op
+        # (profile already current) is fine — install_powershell has already
+        # guaranteed pwsh.exe is present.
+        install_profile(prefix)
 
         progress.step("Downloading Native Access...", 55)
         installer_path = config.cache_dir() / "Native-Access_2.exe"

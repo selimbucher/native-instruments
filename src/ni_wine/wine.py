@@ -157,6 +157,15 @@ def record_prefix_build(wine: Wine) -> None:
         (wine.prefix / _BUILD_MARKER).write_text(build)
 
 
+def prefix_booted_by_ni_wine(prefix: Path) -> bool:
+    """True once ni-wine has run wineboot in *prefix* (marker written).
+
+    Lets setup tell its own half-built prefix apart from an unrelated Wine
+    prefix a user may have pointed NI_WINE_PREFIX at.
+    """
+    return (prefix / _BUILD_MARKER).exists()
+
+
 def ensure_prefix_build(wine: Wine) -> None:
     """Run the prefix migration Wine itself cannot detect on Nix."""
     if not config.drive_c(wine.prefix).is_dir():
