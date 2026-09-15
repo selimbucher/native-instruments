@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from . import config, daemon, msishim
@@ -12,7 +13,13 @@ from .desktop import ensure_url_handler
 from .powershell import install_profile
 from .ui import Progress
 from .util import die, download, info, warn
-from .wine import Wine, apply_prefix_tweaks, hidden_display
+from .wine import (
+    Wine,
+    apply_prefix_tweaks,
+    check_wine_version,
+    hidden_display,
+    record_prefix_build,
+)
 
 # Windows special folders Wine symlinks into $HOME; we replace them with
 # real directories so installers can't touch the actual home folder.
@@ -43,6 +50,21 @@ def _unlink_home_symlinks(prefix: Path) -> None:
     )
 
 
+def _require_win32(prefix: Path) -> None:
+    # A 64-bit-only Wine build (Ubuntu's wine64 without wine32, Nix's
+    # wine64Packages) boots a prefix whose syswow64 has no PE binaries;
+    # winetricks then dies at its first 32-bit call with an opaque exit 1.
+    if (config.drive_c(prefix) / "windows/syswow64/regedit.exe").is_file():
+        return
+    die(
+        "this Wine build has no 32-bit support (C:\\windows\\syswow64 is "
+        "empty), which the VC++ runtime installer needs.\n"
+        "Install a WoW64-capable build and run `ni reinstall`:\n"
+        "  Arch: wine-staging    Debian/Ubuntu: winehq-staging, or wine32\n"
+        "  NixOS: wineWow64Packages.<variant>"
+    )
+
+
 def _is_windows_exe(path: Path) -> bool:
     try:
         with open(path, "rb") as handle:
@@ -59,18 +81,28 @@ def _winetricks(wine: Wine, verb: str, display: str | None) -> None:
     if display is not None:
         env["DISPLAY"] = display
         env.pop("WAYLAND_DISPLAY", None)
-    result = subprocess.run(
-        [winetricks, "--unattended", verb],
-        env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    # Silent on success, but keep the output: winetricks fails for wildly
+    # different reasons (64-bit-only Wine, Wine regressions, dead mirrors)
+    # and a bare exit code has proven undiagnosable in bug reports.
+    log_path = config.cache_dir() / f"winetricks-{verb}.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(log_path, "wb") as log:
+        result = subprocess.run(
+            [winetricks, "--unattended", verb],
+            env=env,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+        )
     if result.returncode != 0:
-        die(f"winetricks {verb} failed (exit {result.returncode})")
+        tail = log_path.read_text(errors="replace").splitlines()
+        print("\n".join(tail[-15:]), file=sys.stderr, flush=True)
+        die(f"winetricks {verb} failed (exit {result.returncode}) "
+            f"— full log: {log_path}")
 
 
 def run_setup(prefix: Path, *, ui: bool = False) -> None:
     wine = Wine(prefix)
+    check_wine_version(wine)
     config.drive_c(prefix).mkdir(parents=True, exist_ok=True)
 
     with Progress("Native Instruments Setup", enabled=ui) as progress, \
@@ -84,6 +116,8 @@ def run_setup(prefix: Path, *, ui: bool = False) -> None:
             extra_env={"WINEDLLOVERRIDES": "mscoree,mshtml="},
             display=display or "",
         )
+        _require_win32(prefix)
+        record_prefix_build(wine)
 
         progress.step("Applying prefix tweaks...", 12)
         apply_prefix_tweaks(wine)

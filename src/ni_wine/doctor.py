@@ -23,7 +23,16 @@ from . import config, daemon, kontakt, msishim, powershell, urlscheme
 from .desktop import current_scheme_handler, ensure_url_handler
 from .launch import native_access_running, clear_updater_residue
 from .util import which_first
-from .wine import TRAY_DISABLED_MARKER, Wine, apply_prefix_tweaks, prefix_in_use, session_wine
+from .wine import (
+    _BUILD_MARKER,
+    TRAY_DISABLED_MARKER,
+    Wine,
+    apply_prefix_tweaks,
+    prefix_in_use,
+    session_wine,
+    wine_build_id,
+    wine_version_problem,
+)
 
 # Chromium persists "Always allow <origin> to open <scheme> links" per
 # origin+scheme in the profile's Preferences JSON.  A deny is never stored
@@ -60,10 +69,19 @@ class Check:
         return line
 
 
+def _cmd_version(cmd: str) -> str | None:
+    try:
+        out = subprocess.run(
+            [cmd, "--version"], capture_output=True, text=True, timeout=10
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    lines = out.stdout.strip().splitlines()
+    return lines[0] if lines else None
+
+
 def _dependency_checks(prefix: Path) -> list[Check]:
     deps: list[tuple[str, tuple[str, ...], bool, str]] = [
-        ("winetricks", ("winetricks",), True,
-         "installs vcrun2022/powershell during setup (Debian: enable contrib)"),
         ("cabextract", ("cabextract",), True, "unpacks the VC++ redistributable"),
         ("7z", ("7z", "7zz", "7za"), True, "reads the MSI inside the Kontakt installer (package: 7zip)"),
         ("msidump", ("msidump",), True, "reads MSI tables (package: msitools)"),
@@ -73,7 +91,27 @@ def _dependency_checks(prefix: Path) -> list[Check]:
         ("yad/zenity", ("yad", "zenity"), True, "graphical setup progress"),
     ]
     wine = os.environ.get("WINE") or session_wine(prefix) or which_first("wine")
-    checks = [Check("wine", bool(wine), wine or "not found (runs Native Access)")]
+    wine_ok = bool(wine)
+    wine_detail = wine or "not found (runs Native Access)"
+    if wine:
+        build = wine_build_id(wine)
+        problem = wine_version_problem(build)
+        if problem is None:
+            wine_detail = f"{wine} ({build})" if build else wine
+        else:
+            severity, message = problem
+            wine_ok = severity != "error"
+            wine_detail = f"{wine} — {message}"
+    checks = [Check("wine", wine_ok, wine_detail)]
+    winetricks = which_first("winetricks")
+    wt_detail = winetricks or (
+        "not found (installs vcrun2022/powershell during setup — "
+        "Debian: enable contrib)"
+    )
+    if winetricks and (version := _cmd_version(winetricks)):
+        # "20260125 - sha256sum: ..." — only the release date matters
+        wt_detail = f"{winetricks} ({version.split(' ')[0]})"
+    checks.append(Check("winetricks", bool(winetricks), wt_detail))
     for label, names, required, purpose in deps:
         found = which_first(*names)
         checks.append(
@@ -90,6 +128,30 @@ def _prefix_checks(prefix: Path) -> list[Check]:
     if not config.drive_c(prefix).is_dir():
         return checks
 
+    wow64 = (config.drive_c(prefix) / "windows/syswow64/regedit.exe").is_file()
+    checks.append(
+        Check("32-bit (WoW64) support in the prefix", wow64,
+              "" if wow64
+              else "the Wine build that made this prefix has no 32-bit "
+                   "support — install a WoW64-capable build (Arch: "
+                   "wine-staging; Debian/Ubuntu: winehq-staging or wine32) "
+                   "and run `ni reinstall`")
+    )
+    try:
+        recorded = (prefix / _BUILD_MARKER).read_text().strip()
+    except OSError:
+        recorded = ""
+    if recorded:
+        wine = os.environ.get("WINE") or session_wine(prefix) or which_first("wine")
+        current = wine_build_id(wine) if wine else None
+        matches = current is None or recorded == current
+        checks.append(
+            Check("prefix Wine build", matches,
+                  recorded if matches
+                  else f"{recorded}, but current Wine is {current} — "
+                       "the prefix is migrated automatically on next launch",
+                  required=False)
+        )
     checks.append(
         Check("Native Access installed", config.na_exe(prefix).is_file(),
               "" if config.na_exe(prefix).is_file() else "run `ni setup`")

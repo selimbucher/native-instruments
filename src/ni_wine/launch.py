@@ -14,7 +14,14 @@ from .desktop import ensure_url_handler
 from .powershell import install_profile
 from .setup_cmd import run_setup
 from .util import die, guarded_rmtree, info, warn
-from .wine import Wine, apply_prefix_tweaks, foreign_prefix_users, prefix_in_use
+from .wine import (
+    Wine,
+    apply_prefix_tweaks,
+    check_wine_version,
+    ensure_prefix_build,
+    foreign_prefix_users,
+    prefix_in_use,
+)
 
 _OFFLINE_MESSAGE = (
     "No connection to native-instruments.com — Native Access has no offline "
@@ -144,6 +151,10 @@ def run_launch(prefix: Path, url: str | None = None) -> int:
         run_setup(prefix, ui=True)
 
     wine = Wine(prefix)
+    # Native Access exits silently (Crashpad swallows the crash) on Wine
+    # builds that are too old — refuse loudly instead.
+    check_wine_version(wine)
+    ensure_prefix_build(wine)
     # explorer.exe reads the tray settings only at startup -- but never
     # take the server down under Kontakt or a plugin host (we may have been
     # started by Kontakt's Activate button).

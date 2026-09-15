@@ -5,6 +5,7 @@ from __future__ import annotations
 import email.utils
 import os
 import shutil
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -22,8 +23,29 @@ def warn(msg: str) -> None:
     print(f"warning: {msg}", file=sys.stderr, flush=True)
 
 
+def _error_dialog(msg: str) -> None:
+    tool = which_first("zenity", "yad")
+    if not tool:
+        return
+    if tool.endswith("zenity"):
+        args = [tool, "--error", "--no-markup", "--title=ni-wine", f"--text={msg}"]
+    else:
+        args = [tool, "--image=dialog-error", "--no-markup", "--title=ni-wine",
+                f"--text={msg}", "--button=Close"]
+    try:
+        subprocess.run(
+            args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
 def die(msg: str, code: int = 1) -> NoReturn:
     print(f"error: {msg}", file=sys.stderr, flush=True)
+    # Desktop launches (.desktop sets NI_WINE_GUI=1) have no console; a
+    # fatal error must surface somewhere the user can see it.
+    if os.environ.get("NI_WINE_GUI"):
+        _error_dialog(msg)
     raise SystemExit(code)
 
 

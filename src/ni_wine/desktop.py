@@ -75,8 +75,8 @@ def install_user_desktop_files(prefix: Path, *, quiet: bool = False) -> None:
     apps = config.data_home() / "applications"
     target = apps / config.DESKTOP_FILE_NAME
     content = _packaged("native-access.desktop")
-    exec_line = f'Exec={_launcher_exec()} --prefix "{prefix}" %u'
-    content = content.replace("Exec=native-access %u", exec_line)
+    exec_line = f'Exec=env NI_WINE_GUI=1 {_launcher_exec()} --prefix "{prefix}" %u'
+    content = content.replace("Exec=env NI_WINE_GUI=1 native-access %u", exec_line)
     if target.is_file() and target.read_text() == content:
         return
     apps.mkdir(parents=True, exist_ok=True)

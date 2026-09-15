@@ -77,6 +77,106 @@ def find_wineserver(wine: str) -> str | None:
     return shutil.which("wineserver")
 
 
+def wine_build_id(wine: str) -> str | None:
+    """`wine --version` output, e.g. "wine-11.14 (Staging)", or None."""
+    try:
+        out = subprocess.run(
+            [wine, "--version"], capture_output=True, text=True, timeout=30
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    line = out.stdout.strip().splitlines()
+    return line[0] if line else None
+
+
+def wine_version_problem(build: str | None) -> tuple[str, str] | None:
+    """Classify a `wine --version` string against Native Access's needs.
+
+    The single source of truth for the version floor (verified 2026-09):
+    wine 8.0 cannot install the PowerShell MSI; Native Access itself
+    crashes deterministically on 9.x and commonly fails to get a GL
+    context on 10.x; 11.x works.  Returns None if the build is fine, else
+    ("error", msg) for a build that will not work or ("warn", msg) for one
+    that may not.  Both the setup/launch gate and `ni doctor` consume this.
+    """
+    if build is None:
+        return ("warn", "could not determine the Wine version")
+    match = re.search(r"wine-(\d+)\.", build)
+    if not match:
+        return ("warn", f"could not parse the Wine version from {build!r}")
+    major = int(match.group(1))
+    if major < 10:
+        return ("error",
+                f"{build} is too old — Native Access needs Wine >= 11 "
+                "(Debian/Ubuntu: install winehq-staging or winehq-stable "
+                "from the WineHQ repository)")
+    if major == 10:
+        return ("warn",
+                f"{build}: Native Access often fails to start under Wine 10 "
+                "— Wine >= 11 is recommended")
+    return None
+
+
+def check_wine_version(wine: Wine) -> None:
+    """Refuse (or warn about) Wine builds Native Access cannot run on."""
+    problem = wine_version_problem(wine_build_id(wine.wine))
+    if problem is None:
+        return
+    severity, message = problem
+    running = session_wine(wine.prefix)
+    if running and _same_binary(running, wine.wine):
+        # find_wine followed a session another app started (a DAW hosting
+        # plugins through yabridge, say) — the fix is on that side.
+        message += (
+            "\nThis Wine was taken from the session already running the "
+            "prefix — upgrade the Wine of whatever started it (yabridge?), "
+            "or close that application first."
+        )
+    if severity == "error":
+        die(message)
+    warn(message)
+
+
+# Wine normally migrates a prefix when the Wine build changes, but it
+# detects the change by comparing file mtimes against .update-timestamp —
+# and on Nix every store file has mtime 1, so the check can never fire
+# there.  Running an un-migrated prefix under a different build breaks
+# loudly (missing DLL forwards, respawning explorer.exe), so we track the
+# build ourselves and force the migration wineboot skips.
+_BUILD_MARKER = ".ni-wine-build"
+
+
+def record_prefix_build(wine: Wine) -> None:
+    build = wine_build_id(wine.wine)
+    if build:
+        (wine.prefix / _BUILD_MARKER).write_text(build)
+
+
+def ensure_prefix_build(wine: Wine) -> None:
+    """Run the prefix migration Wine itself cannot detect on Nix."""
+    if not config.drive_c(wine.prefix).is_dir():
+        return
+    build = wine_build_id(wine.wine)
+    if build is None:
+        return
+    marker = wine.prefix / _BUILD_MARKER
+    try:
+        recorded = marker.read_text().strip()
+    except OSError:
+        recorded = ""
+    if recorded == build:
+        return
+    if prefix_in_use(wine.prefix):
+        # A DAW (via yabridge) or Kontakt's Activate button may be holding
+        # this prefix; wineboot -u would reboot Wine underneath it.  Skip —
+        # the running session's own Wine already matches what started it.
+        return
+    info(f"Wine build changed ({recorded or 'unknown'} -> {build}) — "
+         "updating the prefix...")
+    wine.run(["wineboot", "-u"], display="")
+    record_prefix_build(wine)
+
+
 class Wine:
     """A wine installation bound to one prefix."""
 
