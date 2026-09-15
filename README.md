@@ -40,7 +40,12 @@ Or without: `nix profile install github:selimbucher/native-instruments`.
 
 ```sh
 sudo apt install winetricks cabextract 7zip msitools xvfb zenity procps pipx gcc-mingw-w64-i686
-# Debian 12's wine (8.0) is too old, use the WineHQ repo (winehq-staging).
+# Native Access needs Wine >= 11; every current Debian/Ubuntu release ships
+# an older one (Debian 12: 8.0, Ubuntu 24.04: 9.0, Ubuntu 26.04: 10.0), so
+# use the WineHQ repository:
+#   sudo dpkg --add-architecture i386
+#   then follow https://wiki.winehq.org/Debian (or /Ubuntu) and install
+#   winehq-staging (or winehq-stable >= 11)
 # Debian keeps winetricks in "contrib"; enable that component.
 pipx install git+https://github.com/selimbucher/native-instruments
 ```
