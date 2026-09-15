@@ -1,3 +1,9 @@
+ni-wine (2.3.1ppa1~noble1) noble; urgency=medium
+
+  * Release 2.3.1.
+
+ -- Selim Bucher <me@selim.one>  Wed, 16 Sep 2026 00:49:36 +0200
+
 ni-wine (2.3.0ppa1~noble1) noble; urgency=medium
 
   * Initial PPA release.
