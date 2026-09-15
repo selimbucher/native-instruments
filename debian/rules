@@ -1,0 +1,16 @@
+#!/usr/bin/make -f
+export PYBUILD_NAME = ni_wine
+
+%:
+	dh $@ --with python3 --buildsystem=pybuild
+
+override_dh_auto_build:
+	$(MAKE) -C shim CC=i686-w64-mingw32-gcc
+	cp shim/msi_shim32.dll src/ni_wine/data/msi_shim32.dll
+	dh_auto_build
+
+execute_after_dh_auto_install:
+	install -Dm644 src/ni_wine/data/native-access.desktop \
+	    debian/ni-wine/usr/share/applications/native-access.desktop
+	install -Dm644 src/ni_wine/data/native-access.svg \
+	    debian/ni-wine/usr/share/icons/hicolor/scalable/apps/native-access.svg
