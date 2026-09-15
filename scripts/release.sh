@@ -30,7 +30,28 @@ mv debian/changelog.new debian/changelog
 
 git add -A
 git commit -m "chore: release $v"
-git tag -a "v$v"  # opens $EDITOR: write the release notes — they become the GitHub Release body
+# Draft the release notes in the repo's established style (New features /
+# Fixes / Other with "component:" bullets) from the conventional commits
+# since the last tag, then open the editor for curation.  The final text
+# is stored in the tag annotation and becomes the GitHub Release body.
+prev=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
+range=${prev:+$prev..}HEAD
+section() {
+    local lines
+    lines=$(git log --format='%s' "$range" \
+        | grep -E "^$1[(:]" \
+        | sed -E "s/^$1\(([^)]*)\): /\1: /; s/^$1: //; s/^/- /") || true
+    [ -n "$lines" ] && printf '**%s**\n\n%s\n\n' "$2" "$lines"
+}
+notes=$(mktemp)
+{
+    section feat "New features"
+    section fix "Fixes"
+    section chore "Other"
+} > "$notes"
+${EDITOR:-vi} "$notes"
+git tag -a "v$v" -F "$notes"
+rm -f "$notes"
 
 # The AUR build is pinned to the release commit (GitHub tarball checksums
 # are unstable, so the PKGBUILD fetches by commit with SKIP sums).
