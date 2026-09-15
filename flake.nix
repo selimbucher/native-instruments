@@ -7,8 +7,15 @@
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
+      # NOT wineWow64Packages.yabridge (9.21): current Native Access's
+      # Electron hits a deterministic CHECK crash (0x80000003, no window)
+      # under it — verified on fresh prefixes, 2026-09.  Two Wine builds
+      # cannot share a live prefix session ("wine client error: version
+      # mismatch"), so for DAW cohabitation override *yabridge's* wine up
+      # to this build (its package takes a `wine` argument) instead of
+      # pinning ni-wine down.
       wine = pkgs.wineWow64Packages.staging;
-      version = "2.2.0";
+      version = "2.3.0";
 
       # Tools ni-wine executes at runtime.
       runtimePath = pkgs.lib.makeBinPath [
