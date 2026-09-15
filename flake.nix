@@ -15,7 +15,7 @@
       # to this build (its package takes a `wine` argument) instead of
       # pinning ni-wine down.
       wine = pkgs.wineWow64Packages.staging;
-      version = "2.3.0";
+      version = "2.3.1";
 
       # Tools ni-wine executes at runtime.
       runtimePath = pkgs.lib.makeBinPath [

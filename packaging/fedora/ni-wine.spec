@@ -1,5 +1,5 @@
 Name:           ni-wine
-Version:        2.3.0
+Version:        2.3.1
 Release:        1%{?dist}
 Summary:        Native Instruments software under Wine
 License:        MIT
@@ -67,5 +67,8 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/native-access.desktop
 
 
 %changelog
+* Wed Sep 16 2026 Selim Bucher <me@selim.one> - 2.3.1-1
+- Release 2.3.1
+
 * Tue Sep 15 2026 Selim Bucher <me@selim.one> - 2.3.0-1
 - Initial COPR packaging
