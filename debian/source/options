@@ -1,0 +1,6 @@
+tar-ignore = ".git"
+tar-ignore = ".direnv"
+tar-ignore = ".envrc"
+tar-ignore = ".claude"
+tar-ignore = "src/ni_wine/data/msi_shim32.dll"
+tar-ignore = "__pycache__"

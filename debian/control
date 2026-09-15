@@ -1,0 +1,33 @@
+Source: ni-wine
+Section: sound
+Priority: optional
+Maintainer: Selim Bucher <me@selim.one>
+Build-Depends: debhelper-compat (= 13),
+               dh-python,
+               python3-all,
+               python3-setuptools,
+               pybuild-plugin-pyproject,
+               gcc-mingw-w64-i686
+Standards-Version: 4.6.2
+Homepage: https://github.com/selimbucher/native-instruments
+Rules-Requires-Root: no
+
+Package: ni-wine
+Architecture: all
+Depends: ${misc:Depends},
+         ${python3:Depends},
+         wine (>= 11) | winehq-staging | winehq-stable,
+         winetricks,
+         cabextract,
+         7zip,
+         msitools,
+         xvfb,
+         zenity,
+         procps,
+         xdg-utils,
+         desktop-file-utils
+Recommends: xdotool
+Description: Native Instruments software under Wine
+ Sets up and runs Native Access and Native Instruments products under
+ Wine: a dedicated prefix with the required tweaks and a working Kontakt 8
+ install path.
