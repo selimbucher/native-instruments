@@ -101,10 +101,15 @@ def wine_version_problem(build: str | None) -> tuple[str, str] | None:
     """
     if build is None:
         return ("warn", "could not determine the Wine version")
-    match = re.search(r"wine-(\d+)\.", build)
+    match = re.search(r"wine-(\d+)\.(\d+)", build)
     if not match:
         return ("warn", f"could not parse the Wine version from {build!r}")
-    major = int(match.group(1))
+    major, minor = int(match.group(1)), int(match.group(2))
+    if (major, minor) == (11, 6):
+        return ("warn",
+                f"{build} has a known VC++ installer regression (WineHQ "
+                "bug 59632, fixed in 11.7) — if setup fails at vcrun2022, "
+                "upgrade Wine")
     if major < 10:
         return ("error",
                 f"{build} is too old — Native Access needs Wine >= 11 "
