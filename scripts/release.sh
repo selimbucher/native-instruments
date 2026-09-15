@@ -41,7 +41,12 @@ section() {
     lines=$(git log --format='%s' "$range" \
         | grep -E "^$1[(:]" \
         | sed -E "s/^$1\(([^)]*)\): /\1: /; s/^$1: //; s/^/- /") || true
-    [ -n "$lines" ] && printf '**%s**\n\n%s\n\n' "$2" "$lines"
+    # An empty section must not fail the function: under `set -e` a bare
+    # `[ -n "$lines" ] && printf` returns 1 when the section is empty (e.g.
+    # a release with no feat: commits), which would abort the release.
+    if [ -n "$lines" ]; then
+        printf '**%s**\n\n%s\n\n' "$2" "$lines"
+    fi
 }
 notes=$(mktemp)
 {
