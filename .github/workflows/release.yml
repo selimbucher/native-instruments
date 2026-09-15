@@ -1,0 +1,58 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  aur:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v3
+        with:
+          pkgname: ni-wine
+          pkgbuild: packaging/aur/PKGBUILD
+          commit_username: Selim Bucher
+          commit_email: me@selim.one
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "release ${{ github.ref_name }}"
+
+  ppa:
+    runs-on: ubuntu-latest
+    env:
+      SERIES: "noble resolute"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y devscripts debhelper dh-python python3-all \
+              python3-setuptools pybuild-plugin-pyproject gcc-mingw-w64-i686 dput
+
+      - name: Import signing key
+        run: |
+          echo "${{ secrets.PPA_GPG_PRIVATE_KEY }}" | gpg --batch --import
+          mkdir -p ~/.gnupg
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          gpgconf --kill gpg-agent || true
+
+      - name: Build, sign and upload one source package per series
+        env:
+          PPA_GPG_PASSPHRASE: ${{ secrets.PPA_GPG_PASSPHRASE }}
+        run: |
+          set -eu
+          umask 077
+          printf '%s' "$PPA_GPG_PASSPHRASE" > /tmp/pw
+          base=$(head -1 debian/changelog)
+          for s in $SERIES; do
+            sed -i "1s/.*/$(printf '%s' "$base" | sed "s/~noble1) noble/~${s}1) ${s}/")/" debian/changelog
+            debuild -S -us -uc
+            changes=$(ls ../ni-wine_*~${s}1_source.changes)
+            debsign -p'gpg --batch --pinentry-mode loopback --passphrase-file /tmp/pw' "$changes"
+            dput ppa:selimbucher/ni-wine "$changes"
+            git checkout -- debian/changelog
+          done
+          rm -f /tmp/pw
