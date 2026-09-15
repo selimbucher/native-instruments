@@ -16,12 +16,8 @@ plugins and instruments.
 
 ### Arch
 
-[`ni-wine` on the AUR](https://aur.archlinux.org/packages/ni-wine):
-
 ```sh
 yay -S ni-wine
-# recommended: the staging Wine build (provides `wine`, new-WoW64, no multilib)
-sudo pacman -S wine-staging
 ```
 
 ### NixOS
@@ -36,18 +32,22 @@ home.packages = [ inputs.ni-wine.packages.${pkgs.system}.default ];
 
 Or without: `nix profile install github:selimbucher/native-instruments`.
 
-### Debian / Ubuntu
+### Fedora
 
 ```sh
-sudo apt install winetricks cabextract 7zip msitools xvfb zenity procps pipx gcc-mingw-w64-i686
-# Native Access needs Wine >= 11; every current Debian/Ubuntu release ships
-# an older one (Debian 12: 8.0, Ubuntu 24.04: 9.0, Ubuntu 26.04: 10.0), so
-# use the WineHQ repository:
-#   sudo dpkg --add-architecture i386
-#   then follow https://wiki.winehq.org/Debian (or /Ubuntu) and install
-#   winehq-staging (or winehq-stable >= 11)
-# Debian keeps winetricks in "contrib"; enable that component.
-pipx install git+https://github.com/selimbucher/native-instruments
+sudo dnf copr enable selimbucher/ni-wine
+sudo dnf install ni-wine
+```
+
+### Ubuntu (24.04 / 26.04)
+
+```sh
+sudo dpkg --add-architecture i386   # 24.04 only
+wget -qO- https://dl.winehq.org/wine-builds/winehq.key | sudo gpg --dearmor -o /etc/apt/keyrings/winehq-archive.key
+source /etc/os-release
+sudo wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/ubuntu/dists/$UBUNTU_CODENAME/winehq-$UBUNTU_CODENAME.sources
+sudo add-apt-repository ppa:selimbucher/ni-wine
+sudo apt install ni-wine
 ```
 
 ## Usage
@@ -80,4 +80,6 @@ in at that point with a small `msi.dll` built from `shim/`, see
 
 If something goes wrong, `ni doctor --fix`. Native Access logs to
 `~/.wine-ni/drive_c/users/Public/Documents/Native Instruments/Logs/`,
-ni-wine to `~/.local/state/ni-wine/`.
+ni-wine to `~/.local/state/ni-wine/`. If that doesn't fix it,
+[open an issue](https://github.com/selimbucher/native-instruments/issues)
+with the `ni doctor` output.
