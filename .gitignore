@@ -9,3 +9,8 @@ build/
 result
 src/ni_wine/data/msi_shim32.dll
 result-*
+debian/files
+debian/.debhelper/
+debian/ni-wine/
+debian/*.substvars
+debian/debhelper-build-stamp
