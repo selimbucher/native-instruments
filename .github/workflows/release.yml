@@ -5,6 +5,16 @@ on:
     tags: ["v*"]
 
 jobs:
+  github-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: gh release create "$GITHUB_REF_NAME" --title "ni-wine ${GITHUB_REF_NAME#v}" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   aur:
     runs-on: ubuntu-latest
     steps:
