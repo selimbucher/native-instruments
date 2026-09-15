@@ -30,7 +30,7 @@ mv debian/changelog.new debian/changelog
 
 git add -A
 git commit -m "chore: release $v"
-git tag -a "v$v" -m "ni-wine $v"
+git tag -a "v$v"  # opens $EDITOR: write the release notes — they become the GitHub Release body
 
 # The AUR build is pinned to the release commit (GitHub tarball checksums
 # are unstable, so the PKGBUILD fetches by commit with SKIP sums).
