@@ -67,3 +67,31 @@ jobs:
             git checkout -- debian/changelog
           done
           rm -f /tmp/pw
+
+  copr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install copr-cli
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pipx
+          pipx install copr-cli
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # Pin the package's committish to this tag and build it, so COPR ships
+      # the exact released commit (not a moving branch HEAD).  The RPM version
+      # comes from the spec; a later manual Rebuild also stays on this tag.
+      - name: Build the tagged commit on COPR
+        env:
+          COPR_CONFIG: ${{ secrets.COPR_CONFIG }}
+        run: |
+          mkdir -p ~/.config
+          printf '%s\n' "$COPR_CONFIG" > ~/.config/copr
+          chmod 600 ~/.config/copr
+          copr-cli edit-package-scm selimbucher/ni-wine \
+            --name ni-wine \
+            --clone-url https://github.com/selimbucher/native-instruments \
+            --commit "$GITHUB_REF_NAME" \
+            --spec packaging/fedora/ni-wine.spec \
+            --type git --method rpkg --webhook-rebuild off
+          copr-cli build-package selimbucher/ni-wine --name ni-wine
