@@ -11,6 +11,9 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      # checkout fetches the tag without its annotation, and --notes-from-tag
+      # would then use the commit message instead of the release notes.
+      - run: git fetch --force origin "$GITHUB_REF:$GITHUB_REF"
       - run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-from-tag
         env:
           GH_TOKEN: ${{ github.token }}
