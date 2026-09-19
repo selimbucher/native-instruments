@@ -9,7 +9,7 @@ import socket
 import subprocess
 from pathlib import Path
 
-from . import config, daemon, kontakt, msishim
+from . import config, daemon, kontakt, link, msishim
 from .desktop import ensure_url_handler
 from .powershell import install_profile
 from .setup_cmd import run_setup
@@ -201,6 +201,8 @@ def run_launch(prefix: Path, url: str | None = None) -> int:
     # closed (desktop launchers don't guarantee them), so give it /dev/null
     # instead of inheriting ours, unless debug output was asked for.
     result = wine.run(args, extra_env=extra_env, quiet=not debug)
+    # DAW prefixes set up with `ni link` pick up what was just installed.
+    link.sync_all(prefix)
     return result.returncode
 
 
