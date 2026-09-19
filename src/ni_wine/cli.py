@@ -13,6 +13,7 @@ examples:
   ni launch          start Native Access (first run sets the prefix up);
                      `native-access` is the same command
   ni doctor --fix    diagnose and repair common problems
+  ni link PREFIX     use the installed products from a DAW's own prefix
 
 Kontakt 8 is installed, updated and removed in Native Access like every
 other product.
@@ -72,6 +73,20 @@ def _build_parser() -> argparse.ArgumentParser:
     apply = commands.add_parser("apply-installer")
     apply.add_argument("package")
 
+    link = commands.add_parser(
+        "link",
+        help="make the installed products usable from a DAW's own Wine prefix",
+    )
+    link.add_argument("target", type=Path, metavar="DAW_PREFIX")
+    link.add_argument(
+        "--yes", action="store_true", help="skip the confirmation prompt"
+    )
+
+    unlink = commands.add_parser(
+        "unlink", help="undo `link` (links, registry, MachineGuid)"
+    )
+    unlink.add_argument("target", type=Path, metavar="DAW_PREFIX")
+
     commands.add_parser(
         "fix-msvcp140",
         help="replace Wine's msvcp140 stubs with the real VC++ runtime DLLs",
@@ -110,6 +125,16 @@ def main(argv: list[str] | None = None) -> int:
         from .kontakt import apply_installer
 
         return apply_installer(prefix, args.package)
+    if args.command == "link":
+        from .link import run_link
+
+        run_link(prefix, args.target, assume_yes=args.yes)
+        return 0
+    if args.command == "unlink":
+        from .link import run_unlink
+
+        run_unlink(prefix, args.target)
+        return 0
     if args.command == "fix-msvcp140":
         from .msvcp140 import fix_msvcp140
         from .wine import Wine

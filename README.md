@@ -67,12 +67,38 @@ usage: ni [-h] [-V] [--prefix PATH] <command> ...
   setup            redo the first-time setup (e.g. with `--no-ui`)
   reinstall        wipe the Wine prefix and set everything up again
   doctor [--fix]   check dependencies, prefix health, login-URL wiring
+  link PREFIX      use the installed products from a DAW's own prefix
+  unlink PREFIX    undo `link`
   fix-msvcp140     replace Wine's msvcp140 stubs with the real DLLs
 ```
 
 Every command takes `--help`. Environment: `NI_WINE_PREFIX` (prefix
 location, default `~/.wine-ni`), `WINE` (wine binary override),
 `NI_WINE_DEBUG` (keep Wine debug output).
+
+### DAWs that run under Wine (FL Studio, ...)
+
+A Windows DAW in its own Wine prefix can't use the plugins from
+`~/.wine-ni` by adding that folder as a plugin path: they load, but in
+demo mode (activation lives in the prefix, not next to the plugin).
+Link the DAW's prefix instead, with the DAW closed:
+
+```sh
+ni link ~/.wine-flstudio
+```
+
+The DAW's prefix then sees every installed product at its usual place
+(plugins in `C:\Program Files\Common Files\VST3`), activated, with its
+libraries. Nothing is copied. Run the DAW's plugin scan afterwards, and
+remove any `Z:\...\.wine-ni` plugin path you added before. Keep
+installing and updating in Native Access as before: linked prefixes are
+updated when Native Access closes (or run `ni link` again).
+
+The linked prefix takes over the NI prefix's MachineGuid, because NI's
+activations are bound to it. The DAW's own license may be bound to it
+too: FL Studio asks to "Update your license" once afterwards, log in
+again. `ni unlink ~/.wine-flstudio` removes the links and restores the
+old MachineGuid.
 
 Kontakt 8's installer does not run under Wine's MSI engine; ni-wine steps
 in at that point with a small `msi.dll` built from `shim/`, see
