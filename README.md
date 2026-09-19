@@ -76,33 +76,42 @@ Every command takes `--help`. Environment: `NI_WINE_PREFIX` (prefix
 location, default `~/.wine-ni`), `WINE` (wine binary override),
 `NI_WINE_DEBUG` (keep Wine debug output).
 
-### DAWs that run under Wine (FL Studio, ...)
-
-A Windows DAW in its own Wine prefix can't use the plugins from
-`~/.wine-ni` by adding that folder as a plugin path: they load, but in
-demo mode (activation lives in the prefix, not next to the plugin).
-Link the DAW's prefix instead, with the DAW closed:
-
-```sh
-ni link ~/.wine-flstudio
-```
-
-The DAW's prefix then sees every installed product at its usual place
-(plugins in `C:\Program Files\Common Files\VST3`), activated, with its
-libraries. Nothing is copied. Run the DAW's plugin scan afterwards, and
-remove any `Z:\...\.wine-ni` plugin path you added before. Keep
-installing and updating in Native Access as before: linked prefixes are
-updated when Native Access closes (or run `ni link` again).
-
-The linked prefix takes over the NI prefix's MachineGuid, because NI's
-activations are bound to it. The DAW's own license may be bound to it
-too: FL Studio asks to "Update your license" once afterwards, log in
-again. `ni unlink ~/.wine-flstudio` removes the links and restores the
-old MachineGuid.
-
 Kontakt 8's installer does not run under Wine's MSI engine; ni-wine steps
 in at that point with a small `msi.dll` built from `shim/`, see
 `shim/README.md` if you want to know what it does.
+
+### Linux DAWs (yabridge)
+
+Use yabridge's development build, which has the fixes for Wine 10 and
+newer. Its last release (5.1.1) needs Wine 9.21, which Native Access
+doesn't run on.
+
+- Arch: `yay -S yabridge-wine10-git yabridgectl-wine10-git`
+- Fedora: `sudo dnf copr enable ycollet/audinux && sudo dnf install yabridge`
+- NixOS: the `inputs.ni-wine.overlays.yabridge` overlay builds it against
+  ni-wine's Wine (also set `inputs.ni-wine.inputs.nixpkgs.follows = "nixpkgs"`)
+- Others: the [nightly build](https://nightly.link/robbert-vdh/yabridge/workflows/build/master)
+
+Then:
+
+```sh
+yabridgectl add "$HOME/.wine-ni/drive_c/Program Files/Common Files/VST3"
+yabridgectl sync
+```
+
+### Windows DAWs under Wine
+
+To use the plugins in a DAW that runs in its own Wine prefix, close the
+DAW and link its prefix:
+
+```sh
+ni link /path/to/daw-prefix
+```
+
+Then rescan plugins in the DAW. The DAW may ask to be activated again.
+`ni unlink` undoes the link.
+
+## Troubleshooting
 
 If something goes wrong, `ni doctor --fix`. Native Access logs to
 `~/.wine-ni/drive_c/users/Public/Documents/Native Instruments/Logs/`,

@@ -75,6 +75,33 @@
         msi-shim = msi-shim;
       };
 
+      # yabridge's last release (5.1.1) is built against Wine 9.21, which
+      # Native Access doesn't run on. This builds yabridge master (Wine 10+
+      # support) against ni-wine's Wine, so plugins and Native Access can
+      # share the prefix.
+      overlays.yabridge = final: prev:
+        let
+          wineWow64Packages = prev.wineWow64Packages // {
+            yabridge = final.wineWow64Packages.staging;
+          };
+        in
+        {
+          yabridge = (prev.yabridge.override { inherit wineWow64Packages; }).overrideAttrs (old: {
+            version = "5.1.1-unstable-2026-08-02";
+            src = final.fetchFromGitHub {
+              owner = "robbert-vdh";
+              repo = "yabridge";
+              rev = "b580a9f7fc46509767ca156d4f92872552b9e571";
+              hash = "sha256-TiKiyE3GZYCX1+vooHdD03fAhNQPAA1IzTfkG++I7TY=";
+            };
+            # master dropped the 32-bit build itself
+            patches = builtins.filter
+              (p: !final.lib.hasSuffix "libyabridge-drop-32-bit-support.patch" (toString p))
+              old.patches;
+          });
+          yabridgectl = prev.yabridgectl.override { inherit wineWow64Packages; };
+        };
+
       devShells.${system}.default = pkgs.mkShell {
         packages = [
           ni-wine
