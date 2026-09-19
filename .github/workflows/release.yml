@@ -63,6 +63,15 @@ jobs:
           base=$(head -1 debian/changelog)
           for s in $SERIES; do
             sed -i "1s/.*/$(printf '%s' "$base" | sed "s/~noble1) noble/~${s}1) ${s}/")/" debian/changelog
+            # Skip series already in the PPA, so a failed upload can simply
+            # be re-run (Launchpad rejects a version it already has).
+            v=$(dpkg-parsechangelog -S Version)
+            if curl -fsS "https://api.launchpad.net/1.0/~selimbucher/+archive/ubuntu/ni-wine?ws.op=getPublishedSources&source_name=ni-wine&exact_match=true&version=$v" \
+                | grep -q '"total_size": [1-9]'; then
+              echo "$v is already in the PPA"
+              git checkout -- debian/changelog
+              continue
+            fi
             debuild -S -us -uc
             changes=$(ls ../ni-wine_*~${s}1_source.changes)
             debsign -p'gpg --batch --pinentry-mode loopback --passphrase-file /tmp/pw' "$changes"
