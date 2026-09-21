@@ -42,6 +42,10 @@ def data_home() -> Path:
     )
 
 
+def config_home() -> Path:
+    return Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config")))
+
+
 # --- Locations inside the Wine prefix -------------------------------------
 
 
