@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import config, daemon, kontakt, msishim, powershell, urlscheme
-from .desktop import current_scheme_handler, ensure_url_handler
+from .desktop import ensure_url_handler, scheme_handler_owner
 from .launch import native_access_running, clear_updater_residue
 from .util import which_first
 from .wine import (
@@ -273,11 +273,20 @@ def _elevation_check(prefix: Path) -> Check:
 
 
 def _handler_check() -> Check:
-    handler = current_scheme_handler()
+    owner = scheme_handler_owner()
+    label = "native-access:// URL handler (Linux)"
+    if owner is None:
+        return Check(label, False,
+                     "browser logins cannot reach the app — run `ni doctor --fix`")
+    source, handler = owner
+    if handler == config.DESKTOP_FILE_NAME:
+        return Check(label, True, handler)
     return Check(
-        "native-access:// URL handler (Linux)",
-        handler is not None,
-        handler or "browser logins cannot reach the app — run `ni doctor --fix`",
+        label, False,
+        f"{handler} owns it (set in {source}) — that is another tool's "
+        "launcher, so the browser login callback opens Native Access in its "
+        "Wine prefix, where there is no NTK daemon and it hangs on 'grant "
+        "permission'; run `ni doctor --fix`",
     )
 
 
