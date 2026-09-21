@@ -92,11 +92,12 @@ jobs:
 
             # Launchpad's FTP endpoint intermittently answers "550 Requested
             # action not taken: internal server error" -- always at the
-            # transfer, never in the build, lintian or signing steps, and
-            # sometimes after it has already taken the upload (2.4.0's
-            # resolute package reported 550 and published anyway).  So treat
-            # a failure as "ask Launchpad what it actually has" before
-            # retrying, and only give up once it has really not arrived.
+            # transfer, never in the build, lintian or signing steps.  It
+            # cost the resolute series on both 2.4.0 and 2.4.1; a plain
+            # retry is what eventually got 2.4.1 through.  Ask Launchpad
+            # what it actually has between attempts, so a transfer that did
+            # arrive before erroring is not uploaded a second time, and give
+            # up only once the version has really not landed.
             # -f because dput otherwise refuses a file it has a local
             # .upload record for; in_ppa above is what prevents a genuine
             # duplicate.
