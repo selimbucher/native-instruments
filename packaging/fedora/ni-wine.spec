@@ -1,5 +1,5 @@
 Name:           ni-wine
-Version:        2.4.0
+Version:        2.4.1
 Release:        1%{?dist}
 Summary:        Native Instruments software under Wine
 License:        MIT
@@ -67,6 +67,9 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/native-access.desktop
 
 
 %changelog
+* Mon Sep 21 2026 Selim Bucher <me@selim.one> - 2.4.1-1
+- Release 2.4.1
+
 * Sat Sep 19 2026 Selim Bucher <me@selim.one> - 2.4.0-1
 - Release 2.4.0
 
