@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import textwrap
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -23,14 +24,34 @@ def warn(msg: str) -> None:
     print(f"warning: {msg}", file=sys.stderr, flush=True)
 
 
+def _wrap(msg: str, width: int = 72) -> str:
+    """Wrap overlong lines only: keeps the message's own line breaks and
+    indentation, and never splits a word (a path, a package-name)."""
+    lines = []
+    for line in msg.splitlines():
+        indent = line[: len(line) - len(line.lstrip())]
+        lines.append(
+            textwrap.fill(line, width, subsequent_indent=indent,
+                          break_long_words=False, break_on_hyphens=False)
+            if len(line) > width else line
+        )
+    return "\n".join(lines)
+
+
 def _error_dialog(msg: str) -> None:
     tool = which_first("zenity", "yad")
     if not tool:
         return
+    # A dialog lays a long message out as one line as wide as the screen.
+    msg = _wrap(msg)
     if tool.endswith("zenity"):
         args = [tool, "--error", "--no-markup", "--title=ni-wine", f"--text={msg}"]
     else:
+        # --text-width: see ui.Progress; the rest makes the window Native
+        # Access's to a taskbar.
         args = [tool, "--image=dialog-error", "--no-markup", "--title=ni-wine",
+                "--text-width=72", f"--name={config.APP_ID}",
+                f"--class={config.APP_ID}", f"--window-icon={config.APP_ID}",
                 f"--text={msg}", "--button=Close"]
     try:
         subprocess.run(

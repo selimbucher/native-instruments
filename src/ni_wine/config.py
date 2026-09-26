@@ -15,7 +15,11 @@ VCREDIST_URL = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
 
 # The URL scheme Native Access registers for its browser-login callback.
 URL_SCHEME = "native-access"
-DESKTOP_FILE_NAME = "native-access.desktop"
+
+# The .desktop file id, also its icon's name.  Our dialogs take it as their
+# window id, so a taskbar resolves them to that entry (see ui.py).
+APP_ID = "native-access"
+DESKTOP_FILE_NAME = f"{APP_ID}.desktop"
 
 NA_EXE_WIN = r"C:\Program Files\Native Instruments\Native Access\Native Access.exe"
 

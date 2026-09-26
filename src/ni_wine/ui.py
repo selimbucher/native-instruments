@@ -9,6 +9,7 @@ import tempfile
 import time
 from types import TracebackType
 
+from . import config
 from .util import info, warn
 
 class Progress:
@@ -45,6 +46,17 @@ class Progress:
                 f"--title={self._title}",
                 "--text=<b>Setting up Native Access</b>",
                 "--align=left",
+                # The label's minimum height is computed with it wrapped, and
+                # that minimum — not the one line drawn at 420px — sets the
+                # window height, leaving half the dialog empty.  40
+                # characters is wider than the heading and still fits.
+                "--text-width=40",
+                # Otherwise the window is "yad" to the compositor, and a
+                # taskbar shows the icon theme's yad icon (WhiteSur's is
+                # the GNOME foot) instead of Native Access's.
+                f"--name={config.APP_ID}",
+                f"--class={config.APP_ID}",
+                f"--window-icon={config.APP_ID}",
                 "--auto-close",
                 "--center",
                 "--width=420",
