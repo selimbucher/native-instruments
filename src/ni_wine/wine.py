@@ -188,6 +188,13 @@ def ensure_prefix_build(wine: Wine) -> None:
     info(f"Wine build changed ({recorded or 'unknown'} -> {build}) — "
          "updating the prefix...")
     wine.run(["wineboot", "-u"], display="")
+    # wineboot started this session without a display, and Wine fixes a
+    # session's screen when it starts: without one it is 1024x768, for every
+    # later window too, and the daemon keeps the session alive.  Native
+    # Access then never paints past 1024x768.  End it; the next process
+    # starts a fresh session on the real display.
+    wine.kill_server()
+    wine.wait_server()
     record_prefix_build(wine)
 
 
