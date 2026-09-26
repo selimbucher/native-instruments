@@ -48,11 +48,13 @@ def _error_dialog(msg: str) -> None:
         args = [tool, "--error", "--no-markup", "--title=ni-wine", f"--text={msg}"]
     else:
         # --text-width: see ui.Progress; the rest makes the window Native
-        # Access's to a taskbar.
+        # Access's to a taskbar.  yad unescapes --text even with
+        # --no-markup, which ate the backslashes of Windows paths.
+        text = msg.replace("\\", "\\\\")
         args = [tool, "--image=dialog-error", "--no-markup", "--title=ni-wine",
                 "--text-width=72", f"--name={config.APP_ID}",
                 f"--class={config.APP_ID}", f"--window-icon={config.APP_ID}",
-                f"--text={msg}", "--button=Close"]
+                f"--text={text}", "--button=Close"]
     try:
         subprocess.run(
             args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300
