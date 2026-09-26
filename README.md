@@ -74,7 +74,8 @@ usage: ni [-h] [-V] [--prefix PATH] <command> ...
 
 Every command takes `--help`. Environment: `NI_WINE_PREFIX` (prefix
 location, default `~/.wine-ni`), `WINE` (wine binary override),
-`NI_WINE_DEBUG` (keep Wine debug output).
+`NI_WINE_DEBUG` (keep Wine debug output), `NI_WINE_SCALE` (Native Access
+UI scale, default `GDK_SCALE`; `1` turns it off).
 
 Kontakt 8's installer does not run under Wine's MSI engine; ni-wine steps
 in at that point with a small `msi.dll` built from `shim/`, see
