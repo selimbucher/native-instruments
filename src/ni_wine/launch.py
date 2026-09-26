@@ -125,6 +125,30 @@ def fix_offscreen_window_state(prefix: Path) -> None:
             info("moved Native Access's saved window position back on-screen")
 
 
+def ui_scale() -> tuple[float, str, bool]:
+    """The scale Native Access renders at: (factor, its source, valid).
+
+    Wine hands its windows to the compositor unscaled, so wherever X11 apps
+    have to scale themselves (Hyprland with xwayland:force_zero_scaling, a
+    HiDPI X11 session) Native Access comes up tiny.  GDK_SCALE is how those
+    setups give X11 toolkits the factor; NI_WINE_SCALE overrides it.  Where
+    the compositor scales X11 apps itself, neither is set and NA is left
+    alone.
+    """
+    for var in ("NI_WINE_SCALE", "GDK_SCALE"):
+        raw = os.environ.get(var, "").strip()
+        if not raw:
+            continue
+        try:
+            scale = float(raw)
+        except ValueError:
+            scale = 0.0
+        if 1 <= scale <= 4:
+            return scale, f"from {var}", True
+        return 1.0, f"{var}={raw!r} ignored — not a number from 1 to 4", False
+    return 1.0, "neither NI_WINE_SCALE nor GDK_SCALE is set", True
+
+
 def check_online(timeout: float = 3.0) -> bool:
     try:
         with socket.create_connection(
@@ -191,6 +215,11 @@ def run_launch(prefix: Path, url: str | None = None) -> int:
         info("registered the existing Kontakt 8 install for Native Access")
 
     args = [str(config.na_exe(prefix))]
+    scale, source, valid = ui_scale()
+    if not valid:
+        warn(source)
+    if scale != 1:
+        args.append(f"--force-device-scale-factor={scale:g}")
     if url:
         args.append(url)
 

@@ -21,7 +21,7 @@ from pathlib import Path
 
 from . import config, daemon, kontakt, msishim, powershell, urlscheme
 from .desktop import ensure_url_handler, scheme_handler_owner
-from .launch import native_access_running, clear_updater_residue
+from .launch import native_access_running, clear_updater_residue, ui_scale
 from .util import which_first
 from .wine import (
     _BUILD_MARKER,
@@ -272,6 +272,11 @@ def _elevation_check(prefix: Path) -> Check:
     )
 
 
+def _scale_check() -> Check:
+    scale, source, valid = ui_scale()
+    return Check(f"Native Access UI scale {scale:g}", valid, source, required=False)
+
+
 def _handler_check() -> Check:
     owner = scheme_handler_owner()
     label = "native-access:// URL handler (Linux)"
@@ -438,6 +443,7 @@ def run_doctor(prefix: Path, *, fix: bool = False) -> int:
         *fix_notes,
         _elevation_check(prefix),
         _handler_check(),
+        _scale_check(),
         *_browser_checks(fix),
     ]
 
