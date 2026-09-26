@@ -140,6 +140,10 @@ def _system_entry_current() -> bool:
     return False
 
 
+def _user_icon() -> Path:
+    return config.data_home() / "icons/hicolor/scalable/apps/native-access.svg"
+
+
 def install_user_desktop_files(prefix: Path, *, quiet: bool = False) -> None:
     """Install our .desktop file and icon into the user's XDG data dir —
     but only when they add something over the packaged system entry.
@@ -164,7 +168,7 @@ def install_user_desktop_files(prefix: Path, *, quiet: bool = False) -> None:
         if target.is_file():
             target.unlink()
             removed = True
-        icon = config.data_home() / "icons/hicolor/scalable/apps/native-access.svg"
+        icon = _user_icon()
         if icon.is_file():
             icon.unlink()
         if removed:
@@ -180,14 +184,17 @@ def install_user_desktop_files(prefix: Path, *, quiet: bool = False) -> None:
     # TryExec hides the entry from menus while the launcher is missing
     # (e.g. after the package is removed but this user copy lingers).
     content = content.replace("TryExec=native-access", f"TryExec={launcher}")
+    # Entry and icon are checked apart: a release can change just one of
+    # them, and a missing icon must be restored even when the entry is current.
+    icon = _user_icon()
+    svg = _packaged("native-access.svg")
+    if not (icon.is_file() and icon.read_text() == svg):
+        icon.parent.mkdir(parents=True, exist_ok=True)
+        icon.write_text(svg)
     if target.is_file() and target.read_text() == content:
         return
     apps.mkdir(parents=True, exist_ok=True)
     target.write_text(content)
-
-    icons = config.data_home() / "icons/hicolor/scalable/apps"
-    icons.mkdir(parents=True, exist_ok=True)
-    (icons / "native-access.svg").write_text(_packaged("native-access.svg"))
 
     _run_quiet(["update-desktop-database", str(apps)])
     if not quiet:
