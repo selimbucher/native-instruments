@@ -10,7 +10,9 @@ APP_NAME = "ni-wine"
 # The download button on native-instruments.com/pages/native-access.  The old
 # fileadmin/downloads URL now redirects to that HTML page (site moved to
 # Shopify, Sept 2026), so setup verifies it really got a Windows executable.
-NA_INSTALLER_URL = "https://storage.googleapis.com/ni-assets/downloads/Native-Access_2.exe"
+# storage.googleapis.com/ni-assets, the button's previous target, now denies
+# access (Oct 2026).
+NA_INSTALLER_URL = "https://assets.native-instruments.com/downloads/Native-Access_2.exe"
 VCREDIST_URL = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
 
 # The URL scheme Native Access registers for its browser-login callback.
