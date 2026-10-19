@@ -24,7 +24,7 @@ from .wine import Wine
 
 def _remove_kontakt_files(prefix: Path, *, include_product_json: bool) -> None:
     for rel in config.KONTAKT8_PREFIX_PATHS:
-        guarded_rmtree(config.drive_c(prefix) / rel)
+        guarded_rmtree(config.drive_c(prefix) / rel, prefix=prefix)
     if include_product_json:
         (config.drive_c(prefix) / config.KONTAKT8_PRODUCT_JSON).unlink(missing_ok=True)
 
