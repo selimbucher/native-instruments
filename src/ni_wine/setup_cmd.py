@@ -139,7 +139,10 @@ def run_setup(prefix: Path, *, ui: bool = False) -> None:
     wine = Wine(prefix)
     check_wine_version(wine)
     _discard_incomplete_prefix(wine)
-    config.drive_c(prefix).mkdir(parents=True, exist_ok=True)
+    # A symlinked prefix (kept on another disk) is created where the link
+    # points: the target may be missing, never made or just wiped by
+    # reinstall, and mkdir through a dangling link fails.
+    config.drive_c(prefix.resolve()).mkdir(parents=True, exist_ok=True)
 
     with Progress("Native Instruments Setup", enabled=ui) as progress, \
             hidden_display() as display:
