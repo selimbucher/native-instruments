@@ -134,23 +134,25 @@ def download(url: str, dest: Path, label: str | None = None) -> Path:
     return dest
 
 
-def guarded_rmtree(path: Path) -> None:
-    """Delete a directory tree, refusing implausible targets.
+def guarded_rmtree(path: Path, *, prefix: Path) -> None:
+    """Delete the Wine prefix *prefix*, or a directory tree inside it.
 
-    Only paths under the user's home that are at least two components deep
-    and are not the home directory itself are accepted.  This is a backstop
-    against bugs of the "rm -rf $UNSET_VAR/" family.
+    Only *prefix* itself and paths inside it are accepted, and only if it
+    is a Wine prefix (has a drive_c), at least two components deep, and
+    neither `/` nor the home directory.  Where it lives does not matter:
+    NI_WINE_PREFIX can point at another disk.  This is a backstop against
+    bugs of the "rm -rf $UNSET_VAR/" family.
     """
     resolved = path.expanduser().resolve()
-    home = Path.home().resolve()
-    if resolved == home or resolved == Path("/"):
-        raise RuntimeError(f"refusing to delete {resolved}")
-    if home not in resolved.parents and not str(resolved).startswith(
-        str(config.cache_dir().resolve())
-    ):
-        raise RuntimeError(f"refusing to delete {resolved}: outside home")
-    if len(resolved.parts) < 3:
-        raise RuntimeError(f"refusing to delete {resolved}: path too shallow")
+    root = prefix.expanduser().resolve()
+    if not resolved.is_relative_to(root):
+        raise RuntimeError(f"refusing to delete {resolved}: outside the prefix {root}")
+    if root in (Path.home().resolve(), Path("/")) or len(root.parts) < 3:
+        raise RuntimeError(f"refusing to delete {resolved}: implausible prefix {root}")
+    if not resolved.exists():
+        return
+    if not config.drive_c(root).is_dir():
+        raise RuntimeError(f"refusing to delete {resolved}: {root} is not a Wine prefix")
     shutil.rmtree(resolved, ignore_errors=True)
     if resolved.exists():
         # A partial wipe (e.g. files still held open by a live process) must

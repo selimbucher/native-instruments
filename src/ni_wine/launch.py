@@ -52,7 +52,7 @@ def clear_updater_residue(prefix: Path) -> bool:
     if native_access_running():
         return False
     info("clearing Native Access self-update leftovers")
-    guarded_rmtree(updater)
+    guarded_rmtree(updater, prefix=prefix)
     return True
 
 
@@ -266,7 +266,7 @@ def run_reinstall(prefix: Path, *, assume_yes: bool = False) -> None:
         die("wine processes did not exit — close them and retry")
 
     info("removing Wine prefix...")
-    guarded_rmtree(prefix)
+    guarded_rmtree(prefix, prefix=prefix)
 
     info("running setup...")
     run_setup(prefix, ui=True)

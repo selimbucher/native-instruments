@@ -132,7 +132,7 @@ def _discard_incomplete_prefix(wine: Wine) -> None:
             "Wine processes from the interrupted setup are still running — "
             "close them and run `ni setup` again"
         )
-    guarded_rmtree(prefix)
+    guarded_rmtree(prefix, prefix=prefix)
 
 
 def run_setup(prefix: Path, *, ui: bool = False) -> None:
