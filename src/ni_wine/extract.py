@@ -295,7 +295,8 @@ def _setup_exe_near(msi: Path) -> Path | None:
     (`%TEMP%\\<Product>_Installer\\<name> Setup PC.exe`)."""
     temp = msi.parent.parent
     candidates = [
-        exe for exe in temp.glob("*_Installer/*.exe")
+        exe
+        for exe in temp.glob("*_Installer/*.exe")
         if exe.is_file() and exe.stat().st_size > 50 * 2**20
     ]
     candidates.sort(key=lambda exe: exe.stat().st_size, reverse=True)

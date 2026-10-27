@@ -31,9 +31,15 @@ def _wrap(msg: str, width: int = 72) -> str:
     for line in msg.splitlines():
         indent = line[: len(line) - len(line.lstrip())]
         lines.append(
-            textwrap.fill(line, width, subsequent_indent=indent,
-                          break_long_words=False, break_on_hyphens=False)
-            if len(line) > width else line
+            textwrap.fill(
+                line,
+                width,
+                subsequent_indent=indent,
+                break_long_words=False,
+                break_on_hyphens=False,
+            )
+            if len(line) > width
+            else line
         )
     return "\n".join(lines)
 
@@ -51,14 +57,20 @@ def _error_dialog(msg: str) -> None:
         # Access's to a taskbar. yad unescapes --text even with
         # --no-markup, which ate the backslashes of Windows paths.
         text = msg.replace("\\", "\\\\")
-        args = [tool, "--image=dialog-error", "--no-markup", "--title=ni-wine",
-                "--text-width=72", f"--name={config.APP_ID}",
-                f"--class={config.APP_ID}", f"--window-icon={config.APP_ID}",
-                f"--text={text}", "--button=Close"]
+        args = [
+            tool,
+            "--image=dialog-error",
+            "--no-markup",
+            "--title=ni-wine",
+            "--text-width=72",
+            f"--name={config.APP_ID}",
+            f"--class={config.APP_ID}",
+            f"--window-icon={config.APP_ID}",
+            f"--text={text}",
+            "--button=Close",
+        ]
     try:
-        subprocess.run(
-            args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300
-        )
+        subprocess.run(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
     except (OSError, subprocess.TimeoutExpired):
         pass
 
@@ -93,9 +105,7 @@ def download(url: str, dest: Path, label: str | None = None) -> Path:
     request = urllib.request.Request(url)
     if dest.exists():
         mtime = dest.stat().st_mtime
-        request.add_header(
-            "If-Modified-Since", email.utils.formatdate(mtime, usegmt=True)
-        )
+        request.add_header("If-Modified-Since", email.utils.formatdate(mtime, usegmt=True))
 
     try:
         response = urllib.request.urlopen(request, timeout=60)

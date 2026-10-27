@@ -71,7 +71,9 @@ def ensure(wine: Wine) -> bool:
         changed = True
     path.chmod(0o755)
 
-    if _reg_default(wine.system_reg_text(), rf"{CLASSES_KEY}\shell\open\command") != command(wine.prefix):
+    if _reg_default(wine.system_reg_text(), rf"{CLASSES_KEY}\shell\open\command") != command(
+        wine.prefix
+    ):
         hklm = rf"HKLM\{CLASSES_KEY}"
         wine.reg_add(hklm, "", f"URL:{config.URL_SCHEME}")
         wine.reg_add(hklm, "URL Protocol", "")

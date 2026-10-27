@@ -82,9 +82,7 @@ def _same_prefix(found: str, prefix: Path) -> bool:
 
 def _daemons() -> list[tuple[int, str | None]]:
     """(pid, prefix) of every NTKDaemon.exe on the machine (see _prefix_of)."""
-    result = subprocess.run(
-        ["pgrep", "-f", r"NTKDaemon\.exe"], capture_output=True, text=True
-    )
+    result = subprocess.run(["pgrep", "-f", r"NTKDaemon\.exe"], capture_output=True, text=True)
     found: list[tuple[int, str | None]] = []
     for pid in result.stdout.split():
         try:
@@ -115,7 +113,8 @@ def foreign(prefix: Path) -> list[tuple[int, str]]:
     safe move is to refuse to start until it is gone.
     """
     return [
-        (pid, found) for pid, found in _daemons()
+        (pid, found)
+        for pid, found in _daemons()
         if found is not None and not _same_prefix(found, prefix)
     ]
 
@@ -276,7 +275,7 @@ def start(wine: Wine, prefix: Path, *, timeout: float = 90) -> str | None:
     if "version mismatch" in output:
         return (
             f"the prefix is already running under a different Wine build than {wine.wine} "
-            "(\"version mismatch\"); close the program using it (your DAW's plugins?) or run "
+            '("version mismatch"); close the program using it (your DAW\'s plugins?) or run '
             "with WINE= pointing at that build"
         )
     detail = f": {output[:200]}" if output else ""

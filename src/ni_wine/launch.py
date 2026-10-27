@@ -32,9 +32,7 @@ _OFFLINE_MESSAGE = (
 
 def native_access_running() -> bool:
     return (
-        subprocess.run(
-            ["pgrep", "-f", r"Native Access\.exe"], stdout=subprocess.DEVNULL
-        ).returncode
+        subprocess.run(["pgrep", "-f", r"Native Access\.exe"], stdout=subprocess.DEVNULL).returncode
         == 0
     )
 
@@ -64,25 +62,17 @@ def _screen_size() -> tuple[int, int] | None:
     geometry, which matches on unscaled displays.
     """
     if shutil.which("hyprctl") and os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
-        result = subprocess.run(
-            ["hyprctl", "monitors", "-j"], capture_output=True, text=True
-        )
+        result = subprocess.run(["hyprctl", "monitors", "-j"], capture_output=True, text=True)
         try:
             monitors = json.loads(result.stdout)
-            width = max(
-                int(m["x"] + m["width"] / m["scale"]) for m in monitors
-            )
-            height = max(
-                int(m["y"] + m["height"] / m["scale"]) for m in monitors
-            )
+            width = max(int(m["x"] + m["width"] / m["scale"]) for m in monitors)
+            height = max(int(m["y"] + m["height"] / m["scale"]) for m in monitors)
             return width, height
         except (json.JSONDecodeError, KeyError, ValueError, ZeroDivisionError):
             pass
     xdotool = shutil.which("xdotool")
     if xdotool and os.environ.get("DISPLAY"):
-        result = subprocess.run(
-            [xdotool, "getdisplaygeometry"], capture_output=True, text=True
-        )
+        result = subprocess.run([xdotool, "getdisplaygeometry"], capture_output=True, text=True)
         try:
             width, height = map(int, result.stdout.split())
             return width, height
@@ -151,9 +141,7 @@ def ui_scale() -> tuple[float, str, bool]:
 
 def check_online(timeout: float = 3.0) -> bool:
     try:
-        with socket.create_connection(
-            ("api.native-instruments.com", 443), timeout=timeout
-        ):
+        with socket.create_connection(("api.native-instruments.com", 443), timeout=timeout):
             return True
     except OSError:
         return False
@@ -251,10 +239,7 @@ def run_reinstall(prefix: Path, *, assume_yes: bool = False) -> None:
 
     hosts = foreign_prefix_users(prefix)
     if hosts:
-        die(
-            f"{len(hosts)} plugin host(s) (yabridge) are using {prefix}, "
-            "close your DAW first."
-        )
+        die(f"{len(hosts)} plugin host(s) (yabridge) are using {prefix}, close your DAW first.")
     info("killing Wine session...")
     wine = Wine(prefix)
     wine.kill_server()

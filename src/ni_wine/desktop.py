@@ -21,9 +21,7 @@ _SCHEME_MIME = f"x-scheme-handler/{config.URL_SCHEME}"
 
 
 def _packaged(name: str) -> str:
-    return (
-        importlib.resources.files("ni_wine").joinpath("data", name).read_text()
-    )
+    return importlib.resources.files("ni_wine").joinpath("data", name).read_text()
 
 
 def _run_quiet(args: list[str]) -> subprocess.CompletedProcess | None:
@@ -112,7 +110,11 @@ def _launcher_exec() -> str:
         candidate = running.parent / "native-access"
         if candidate.is_file():
             found = shutil.which("native-access")
-            if found and Path(found).resolve() == candidate and Path.home() not in candidate.parents:
+            if (
+                found
+                and Path(found).resolve() == candidate
+                and Path.home() not in candidate.parents
+            ):
                 return "native-access"
             return str(candidate)
     found = shutil.which("native-access")
@@ -161,9 +163,11 @@ def install_user_desktop_files(prefix: Path, *, quiet: bool = False) -> None:
     target = apps / config.DESKTOP_FILE_NAME
     launcher = _launcher_exec()
 
-    if (launcher == "native-access"
-            and prefix == Path.home() / ".wine-ni"
-            and _system_entry_current()):
+    if (
+        launcher == "native-access"
+        and prefix == Path.home() / ".wine-ni"
+        and _system_entry_current()
+    ):
         removed = False
         if target.is_file():
             target.unlink()
@@ -174,8 +178,7 @@ def install_user_desktop_files(prefix: Path, *, quiet: bool = False) -> None:
         if removed:
             _run_quiet(["update-desktop-database", str(apps)])
             if not quiet:
-                info("removed the user-local desktop entry, the packaged "
-                     "system entry is current")
+                info("removed the user-local desktop entry, the packaged system entry is current")
         return
 
     content = _packaged("native-access.desktop")
@@ -222,9 +225,7 @@ def ensure_url_handler(prefix: Path, *, quiet: bool = False) -> bool:
     if owner is not None and owner[1] == config.DESKTOP_FILE_NAME:
         return True
 
-    result = _run_quiet(
-        ["xdg-mime", "default", config.DESKTOP_FILE_NAME, _SCHEME_MIME]
-    )
+    result = _run_quiet(["xdg-mime", "default", config.DESKTOP_FILE_NAME, _SCHEME_MIME])
     if result is None:
         if not quiet:
             warn(
@@ -245,10 +246,7 @@ def ensure_url_handler(prefix: Path, *, quiet: bool = False) -> bool:
         return False
     if not quiet:
         if owner:
-            info(
-                f"took {config.URL_SCHEME}:// over from {owner[1]} "
-                f"(was set in {owner[0]})"
-            )
+            info(f"took {config.URL_SCHEME}:// over from {owner[1]} (was set in {owner[0]})")
         else:
             info(f"registered {config.DESKTOP_FILE_NAME} as {_SCHEME_MIME} handler")
     return True

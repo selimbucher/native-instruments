@@ -12,6 +12,7 @@ from types import TracebackType
 from . import config
 from .util import info, warn
 
+
 class Progress:
     """Context manager that shows setup progress.
 
@@ -28,15 +29,13 @@ class Progress:
         self._proc: subprocess.Popen | None = None
         self._css_path: str | None = None
 
-    def __enter__(self) -> "Progress":
+    def __enter__(self) -> Progress:
         if not self._enabled:
             return self
         if shutil.which("yad"):
             # Follows the GTK theme, light or dark. The one override: GTK
             # themes dim the bar's text, and that is where the step shows.
-            css = tempfile.NamedTemporaryFile(
-                "w", suffix=".css", delete=False, prefix="ni-wine-"
-            )
+            css = tempfile.NamedTemporaryFile("w", suffix=".css", delete=False, prefix="ni-wine-")
             css.write("progressbar text { color: @theme_fg_color; }\n")
             css.close()
             self._css_path = css.name
@@ -93,8 +92,10 @@ class Progress:
         time.sleep(0.3)
         if self._proc.poll() is not None:
             err = (self._proc.stderr.read() if self._proc.stderr else "").strip()
-            warn(f"{cmd[0]} progress dialog failed ({err or 'exited'}); "
-                 "reporting progress on the console")
+            warn(
+                f"{cmd[0]} progress dialog failed ({err or 'exited'}); "
+                "reporting progress on the console"
+            )
             self._forget_dialog()
         return self
 

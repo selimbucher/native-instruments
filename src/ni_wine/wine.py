@@ -80,9 +80,7 @@ def find_wineserver(wine: str) -> str | None:
 def wine_build_id(wine: str) -> str | None:
     """`wine --version` output, e.g. "wine-11.14 (Staging)", or None."""
     try:
-        out = subprocess.run(
-            [wine, "--version"], capture_output=True, text=True, timeout=30
-        )
+        out = subprocess.run([wine, "--version"], capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.TimeoutExpired):
         return None
     line = out.stdout.strip().splitlines()
@@ -106,19 +104,25 @@ def wine_version_problem(build: str | None) -> tuple[str, str] | None:
         return ("warn", f"could not parse the Wine version from {build!r}")
     major, minor = int(match.group(1)), int(match.group(2))
     if (major, minor) == (11, 6):
-        return ("warn",
-                f"{build} has a known VC++ installer regression (WineHQ "
-                "bug 59632, fixed in 11.7), if setup fails at vcrun2022, "
-                "upgrade Wine")
+        return (
+            "warn",
+            f"{build} has a known VC++ installer regression (WineHQ "
+            "bug 59632, fixed in 11.7), if setup fails at vcrun2022, "
+            "upgrade Wine",
+        )
     if major < 10:
-        return ("error",
-                f"{build} is too old, Native Access needs Wine >= 11 "
-                "(Debian/Ubuntu: install winehq-staging or winehq-stable "
-                "from the WineHQ repository)")
+        return (
+            "error",
+            f"{build} is too old, Native Access needs Wine >= 11 "
+            "(Debian/Ubuntu: install winehq-staging or winehq-stable "
+            "from the WineHQ repository)",
+        )
     if major == 10:
-        return ("warn",
-                f"{build}: Native Access often fails to start under Wine 10 "
-                "- Wine >= 11 is recommended")
+        return (
+            "warn",
+            f"{build}: Native Access often fails to start under Wine 10 "
+            "- Wine >= 11 is recommended",
+        )
     return None
 
 
@@ -185,8 +189,7 @@ def ensure_prefix_build(wine: Wine) -> None:
         # this prefix; wineboot -u would reboot Wine underneath it. Skip -
         # the running session's own Wine already matches what started it.
         return
-    info(f"Wine build changed ({recorded or 'unknown'} -> {build}), "
-         "updating the prefix...")
+    info(f"Wine build changed ({recorded or 'unknown'} -> {build}), updating the prefix...")
     wine.run(["wineboot", "-u"], display="")
     # wineboot started this session without a display, and Wine fixes a
     # session's screen when it starts: without one it is 1024x768, for every
@@ -228,9 +231,7 @@ class Wine:
             env["DISPLAY"] = display
             env.pop("WAYLAND_DISPLAY", None)
         out = subprocess.DEVNULL if quiet else None
-        return subprocess.run(
-            [self.wine, *args], env=env, check=check, stdout=out, stderr=out
-        )
+        return subprocess.run([self.wine, *args], env=env, check=check, stdout=out, stderr=out)
 
     def reg_add(
         self,
@@ -373,9 +374,7 @@ def foreign_prefix_users(prefix: Path) -> list[int]:
     A DAW's bridged plugins share the prefix's wineserver; killing that
     server (kill_server, reinstall) takes them, and the DAW, down with it.
     """
-    result = subprocess.run(
-        ["pgrep", "-f", "yabridge-host"], capture_output=True, text=True
-    )
+    result = subprocess.run(["pgrep", "-f", "yabridge-host"], capture_output=True, text=True)
     wanted = str(prefix.expanduser().resolve())
     pids = []
     for pid in result.stdout.split():
@@ -391,7 +390,7 @@ def foreign_prefix_users(prefix: Path) -> list[int]:
             continue
         for entry in environ:
             if entry.startswith(b"WINEPREFIX="):
-                value = entry[len(b"WINEPREFIX="):].decode(errors="replace")
+                value = entry[len(b"WINEPREFIX=") :].decode(errors="replace")
                 if str(Path(value).expanduser().resolve()) == wanted:
                     pids.append(int(pid))
                 break
@@ -407,10 +406,7 @@ def _start_xvfb(xvfb: str, size: str) -> tuple[subprocess.Popen, str] | None:
     pre-check never goes near the session display.
     """
     for number in range(90, 111):
-        if (
-            Path(f"/tmp/.X{number}-lock").exists()
-            or Path(f"/tmp/.X11-unix/X{number}").exists()
-        ):
+        if Path(f"/tmp/.X{number}-lock").exists() or Path(f"/tmp/.X11-unix/X{number}").exists():
             continue
         proc = subprocess.Popen(
             [xvfb, f":{number}", "-screen", "0", size, "-nolisten", "tcp"],
@@ -530,7 +526,8 @@ def _reg_default(reg_text: str, key: str) -> str | None:
     escaped = key.replace("\\", "\\\\")
     match = re.search(
         rf"^\[{re.escape(escaped)}\] \d+\n(?:#[^\n]*\n)*@=\"((?:[^\"\\]|\\.)*)\"",
-        reg_text, re.MULTILINE,
+        reg_text,
+        re.MULTILINE,
     )
     if not match:
         return None

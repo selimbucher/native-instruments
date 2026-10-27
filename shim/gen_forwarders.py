@@ -58,8 +58,10 @@ def main() -> None:
     definition += [f"{name} @{ordinal}" for ordinal, name in names]
     (HERE / "msi.def").write_text("\n".join(definition) + "\n")
 
-    print(f"{len(names)} exports: {len(names) - len(INTERCEPTED)} forwarded, "
-          f"{len(INTERCEPTED)} intercepted ({', '.join(INTERCEPTED)})")
+    print(
+        f"{len(names)} exports: {len(names) - len(INTERCEPTED)} forwarded, "
+        f"{len(INTERCEPTED)} intercepted ({', '.join(INTERCEPTED)})"
+    )
 
 
 if __name__ == "__main__":

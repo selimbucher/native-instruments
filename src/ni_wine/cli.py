@@ -32,9 +32,7 @@ def _build_parser() -> argparse.ArgumentParser:
         epilog=_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument(
-        "-V", "--version", action="version", version=f"ni-wine {__version__}"
-    )
+    parser.add_argument("-V", "--version", action="version", version=f"ni-wine {__version__}")
     parser.add_argument(
         "--prefix",
         type=Path,
@@ -45,12 +43,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
     commands = parser.add_subparsers(dest="command", metavar="<command>", required=True)
 
-    setup = commands.add_parser(
-        "setup", help="create the Wine prefix and install Native Access"
-    )
-    setup.add_argument(
-        "--no-ui", action="store_true", help="print progress to the console only"
-    )
+    setup = commands.add_parser("setup", help="create the Wine prefix and install Native Access")
+    setup.add_argument("--no-ui", action="store_true", help="print progress to the console only")
 
     launch = commands.add_parser(
         "launch", help="start Native Access (sets the prefix up first if needed)"
@@ -65,9 +59,7 @@ def _build_parser() -> argparse.ArgumentParser:
     reinstall = commands.add_parser(
         "reinstall", help="wipe the Wine prefix and set everything up again"
     )
-    reinstall.add_argument(
-        "--yes", action="store_true", help="skip the confirmation prompt"
-    )
+    reinstall.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
 
     # Internal: what the hook script calls from inside Wine. Unlisted.
     apply = commands.add_parser("apply-installer")
@@ -78,13 +70,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="make the installed products usable from a DAW's own Wine prefix",
     )
     link.add_argument("target", type=Path, metavar="DAW_PREFIX")
-    link.add_argument(
-        "--yes", action="store_true", help="skip the confirmation prompt"
-    )
+    link.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
 
-    unlink = commands.add_parser(
-        "unlink", help="undo `link` (links, registry, MachineGuid)"
-    )
+    unlink = commands.add_parser("unlink", help="undo `link` (links, registry, MachineGuid)")
     unlink.add_argument("target", type=Path, metavar="DAW_PREFIX")
 
     commands.add_parser(
@@ -95,9 +83,7 @@ def _build_parser() -> argparse.ArgumentParser:
     doctor = commands.add_parser(
         "doctor", help="check dependencies, prefix health, and login-URL wiring"
     )
-    doctor.add_argument(
-        "--fix", action="store_true", help="repair everything repairable"
-    )
+    doctor.add_argument("--fix", action="store_true", help="repair everything repairable")
 
     return parser
 
@@ -156,9 +142,7 @@ def native_access_main(argv: list[str] | None = None) -> int:
         prog="native-access",
         description="Start Native Access under Wine (the same as `ni launch`).",
     )
-    parser.add_argument(
-        "-V", "--version", action="version", version=f"ni-wine {__version__}"
-    )
+    parser.add_argument("-V", "--version", action="version", version=f"ni-wine {__version__}")
     parser.add_argument(
         "--prefix",
         type=Path,
@@ -166,7 +150,9 @@ def native_access_main(argv: list[str] | None = None) -> int:
         metavar="PATH",
         help="Wine prefix to use (default: ~/.wine-ni or $NI_WINE_PREFIX)",
     )
-    parser.add_argument("--reinstall", action="store_true", help=argparse.SUPPRESS)  # old spelling of `ni reinstall`
+    parser.add_argument(
+        "--reinstall", action="store_true", help=argparse.SUPPRESS
+    )  # old spelling of `ni reinstall`
     parser.add_argument("url", nargs="?", default=None, help="native-access:// callback URL")
     args = parser.parse_args(argv)
 

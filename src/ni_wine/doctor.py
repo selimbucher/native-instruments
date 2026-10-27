@@ -21,7 +21,7 @@ from pathlib import Path
 
 from . import config, daemon, kontakt, msishim, powershell, urlscheme
 from .desktop import ensure_url_handler, scheme_handler_owner
-from .launch import native_access_running, clear_updater_residue, ui_scale
+from .launch import clear_updater_residue, ui_scale
 from .util import which_first
 from .wine import (
     _BUILD_MARKER,
@@ -71,9 +71,7 @@ class Check:
 
 def _cmd_version(cmd: str) -> str | None:
     try:
-        out = subprocess.run(
-            [cmd, "--version"], capture_output=True, text=True, timeout=10
-        )
+        out = subprocess.run([cmd, "--version"], capture_output=True, text=True, timeout=10)
     except (OSError, subprocess.TimeoutExpired):
         return None
     lines = out.stdout.strip().splitlines()
@@ -83,7 +81,12 @@ def _cmd_version(cmd: str) -> str | None:
 def _dependency_checks(prefix: Path) -> list[Check]:
     deps: list[tuple[str, tuple[str, ...], bool, str]] = [
         ("cabextract", ("cabextract",), True, "unpacks the VC++ redistributable"),
-        ("7z", ("7z", "7zz", "7za"), True, "reads the MSI inside the Kontakt installer (package: 7zip)"),
+        (
+            "7z",
+            ("7z", "7zz", "7za"),
+            True,
+            "reads the MSI inside the Kontakt installer (package: 7zip)",
+        ),
         ("msidump", ("msidump",), True, "reads MSI tables (package: msitools)"),
         ("pgrep", ("pgrep",), True, "process checks (package: procps)"),
         ("Xvfb", ("Xvfb",), True, "hides installer windows during setup"),
@@ -105,8 +108,7 @@ def _dependency_checks(prefix: Path) -> list[Check]:
     checks = [Check("wine", wine_ok, wine_detail)]
     winetricks = which_first("winetricks")
     wt_detail = winetricks or (
-        "not found (installs vcrun2022/powershell during setup, "
-        "Debian: enable contrib)"
+        "not found (installs vcrun2022/powershell during setup, Debian: enable contrib)"
     )
     if winetricks and (version := _cmd_version(winetricks)):
         # "20260125 - sha256sum: ...", only the release date matters
@@ -114,28 +116,33 @@ def _dependency_checks(prefix: Path) -> list[Check]:
     checks.append(Check("winetricks", bool(winetricks), wt_detail))
     for label, names, required, purpose in deps:
         found = which_first(*names)
-        checks.append(
-            Check(label, bool(found), found or f"not found ({purpose})", required)
-        )
+        checks.append(Check(label, bool(found), found or f"not found ({purpose})", required))
     return checks
 
 
 def _prefix_checks(prefix: Path) -> list[Check]:
     checks = [
-        Check(f"Wine prefix at {prefix}", config.drive_c(prefix).is_dir(),
-              "" if config.drive_c(prefix).is_dir() else "run `ni setup`")
+        Check(
+            f"Wine prefix at {prefix}",
+            config.drive_c(prefix).is_dir(),
+            "" if config.drive_c(prefix).is_dir() else "run `ni setup`",
+        )
     ]
     if not config.drive_c(prefix).is_dir():
         return checks
 
     wow64 = (config.drive_c(prefix) / "windows/syswow64/regedit.exe").is_file()
     checks.append(
-        Check("32-bit (WoW64) support in the prefix", wow64,
-              "" if wow64
-              else "the Wine build that made this prefix has no 32-bit "
-                   "support, install a WoW64-capable build (Arch: "
-                   "wine-staging; Debian/Ubuntu: winehq-staging or wine32) "
-                   "and run `ni reinstall`")
+        Check(
+            "32-bit (WoW64) support in the prefix",
+            wow64,
+            ""
+            if wow64
+            else "the Wine build that made this prefix has no 32-bit "
+            "support, install a WoW64-capable build (Arch: "
+            "wine-staging; Debian/Ubuntu: winehq-staging or wine32) "
+            "and run `ni reinstall`",
+        )
     )
     try:
         recorded = (prefix / _BUILD_MARKER).read_text().strip()
@@ -146,77 +153,118 @@ def _prefix_checks(prefix: Path) -> list[Check]:
         current = wine_build_id(wine) if wine else None
         matches = current is None or recorded == current
         checks.append(
-            Check("prefix Wine build", matches,
-                  recorded if matches
-                  else f"{recorded}, but current Wine is {current}, "
-                       "the prefix is migrated automatically on next launch",
-                  required=False)
+            Check(
+                "prefix Wine build",
+                matches,
+                recorded
+                if matches
+                else f"{recorded}, but current Wine is {current}, "
+                "the prefix is migrated automatically on next launch",
+                required=False,
+            )
         )
     checks.append(
-        Check("Native Access installed", config.na_exe(prefix).is_file(),
-              "" if config.na_exe(prefix).is_file() else "run `ni setup`")
+        Check(
+            "Native Access installed",
+            config.na_exe(prefix).is_file(),
+            "" if config.na_exe(prefix).is_file() else "run `ni setup`",
+        )
     )
     checks.append(
-        Check("NTKDaemon installed", daemon.installed(prefix),
-              "" if daemon.installed(prefix)
-              else "installed automatically on next `ni launch`")
+        Check(
+            "NTKDaemon installed",
+            daemon.installed(prefix),
+            "" if daemon.installed(prefix) else "installed automatically on next `ni launch`",
+        )
     )
     checks.append(
-        Check(f"NTKDaemon service ({daemon.SERVICE}) registered",
-              daemon.service_registered(prefix),
-              "" if daemon.service_registered(prefix)
-              else "reinstalled automatically on next `ni launch`")
+        Check(
+            f"NTKDaemon service ({daemon.SERVICE}) registered",
+            daemon.service_registered(prefix),
+            ""
+            if daemon.service_registered(prefix)
+            else "reinstalled automatically on next `ni launch`",
+        )
     )
     if powershell.pwsh_installed(prefix):
         current = powershell.profile_current(prefix)
         checks.append(
-            Check("ni-wine PowerShell profile installed", current,
-                  "" if current
-                  else "the winetricks profile hangs the NA installer and breaks "
-                       "NA's daemon install, run `ni doctor --fix`")
+            Check(
+                "ni-wine PowerShell profile installed",
+                current,
+                ""
+                if current
+                else "the winetricks profile hangs the NA installer and breaks "
+                "NA's daemon install, run `ni doctor --fix`",
+            )
         )
     others = daemon.foreign(prefix)
     checks.append(
-        Check("no NTK daemon from another prefix", not others,
-              "" if not others
-              else "; ".join(f"pid {pid} serves {other}" for pid, other in others)
-                   + ", Native Access would use that prefix's login; stop it first")
+        Check(
+            "no NTK daemon from another prefix",
+            not others,
+            ""
+            if not others
+            else "; ".join(f"pid {pid} serves {other}" for pid, other in others)
+            + ", Native Access would use that prefix's login; stop it first",
+        )
     )
     is_running = daemon.running(prefix)
     stale = daemon.stale_locks(prefix)
     checks.append(
-        Check("no stale NI lock files", not stale,
-              "" if not stale
-              else f"{len(stale)} in ProgramData/boost_interprocess make the daemon's "
-                   "product scan take 15 minutes; removed by the next launch or `ni doctor --fix`")
+        Check(
+            "no stale NI lock files",
+            not stale,
+            ""
+            if not stale
+            else f"{len(stale)} in ProgramData/boost_interprocess make the daemon's "
+            "product scan take 15 minutes; removed by the next launch or `ni doctor --fix`",
+        )
     )
     checks.append(
-        Check("NTK daemon running", is_running,
-              "" if is_running
-              else "started by `ni launch` (or `ni doctor --fix`), Native "
-                   "Access hangs on 'grant permission' without it",
-              required=False)
+        Check(
+            "NTK daemon running",
+            is_running,
+            ""
+            if is_running
+            else "started by `ni launch` (or `ni doctor --fix`), Native "
+            "Access hangs on 'grant permission' without it",
+            required=False,
+        )
     )
     if config.kontakt8_exe(prefix).is_file():
         registered = kontakt.registry_complete(prefix)
         checks.append(
-            Check("Kontakt 8 registered for Native Access", registered,
-                  "" if registered
-                  else "Native Access would show it as not installed after a "
-                       "refresh, run `ni doctor --fix`")
+            Check(
+                "Kontakt 8 registered for Native Access",
+                registered,
+                ""
+                if registered
+                else "Native Access would show it as not installed after a "
+                "refresh, run `ni doctor --fix`",
+            )
         )
     checks.append(
-        Check("Kontakt 8 installed", config.kontakt8_exe(prefix).is_file(),
-              "" if config.kontakt8_exe(prefix).is_file()
-              else "optional, install it in Native Access", required=False)
+        Check(
+            "Kontakt 8 installed",
+            config.kontakt8_exe(prefix).is_file(),
+            ""
+            if config.kontakt8_exe(prefix).is_file()
+            else "optional, install it in Native Access",
+            required=False,
+        )
     )
     hook_ok = msishim.installed(prefix) and msishim.current(prefix)
     checks.append(
-        Check("Kontakt installer hook (msi shim) installed", hook_ok,
-              "" if hook_ok
-              else f"{msishim.describe(prefix)}, Native Access cannot install "
-                   "Kontakt without it; armed by `native-access` or `ni doctor --fix`",
-              required=False)
+        Check(
+            "Kontakt installer hook (msi shim) installed",
+            hook_ok,
+            ""
+            if hook_ok
+            else f"{msishim.describe(prefix)}, Native Access cannot install "
+            "Kontakt without it; armed by `native-access` or `ni doctor --fix`",
+            required=False,
+        )
     )
 
     reg_text = ""
@@ -226,25 +274,29 @@ def _prefix_checks(prefix: Path) -> list[Check]:
         pass
     tray_off = TRAY_DISABLED_MARKER in reg_text
     checks.append(
-        Check("tray-icon window disabled", tray_off,
-              "" if tray_off else "run `ni doctor --fix`")
+        Check("tray-icon window disabled", tray_off, "" if tray_off else "run `ni doctor --fix`")
     )
     scheme_registered = urlscheme.registered(Wine(prefix))
     checks.append(
-        Check("native-access:// registered in prefix (Kontakt's Activate button)",
-              scheme_registered,
-              "" if scheme_registered
-              else "armed by `native-access` or `ni doctor --fix` "
-                   "(a fresh registration shows here once Wine has flushed the registry)")
+        Check(
+            "native-access:// registered in prefix (Kontakt's Activate button)",
+            scheme_registered,
+            ""
+            if scheme_registered
+            else "armed by `native-access` or `ni doctor --fix` "
+            "(a fresh registration shows here once Wine has flushed the registry)",
+        )
     )
 
     updater = config.updater_dir(prefix)
     residue = updater.is_dir() and any(updater.iterdir())
     checks.append(
-        Check("no self-update leftovers", not residue,
-              "" if not residue
-              else "old update downloads waste disk, run `ni doctor --fix`",
-              required=False)
+        Check(
+            "no self-update leftovers",
+            not residue,
+            "" if not residue else "old update downloads waste disk, run `ni doctor --fix`",
+            required=False,
+        )
     )
     return checks
 
@@ -265,9 +317,10 @@ def _elevation_check(prefix: Path) -> Check:
     return Check(
         label,
         outcome,
-        "" if outcome
+        ""
+        if outcome
         else "broken, harmless while ni-wine starts the daemon before "
-             "Native Access; `ni doctor --fix` installs the PowerShell profile",
+        "Native Access; `ni doctor --fix` installs the PowerShell profile",
         required=False,
     )
 
@@ -281,13 +334,13 @@ def _handler_check() -> Check:
     owner = scheme_handler_owner()
     label = "native-access:// URL handler (Linux)"
     if owner is None:
-        return Check(label, False,
-                     "browser logins cannot reach the app, run `ni doctor --fix`")
+        return Check(label, False, "browser logins cannot reach the app, run `ni doctor --fix`")
     source, handler = owner
     if handler == config.DESKTOP_FILE_NAME:
         return Check(label, True, handler)
     return Check(
-        label, False,
+        label,
+        False,
         f"{handler} owns it (set in {source}), that is another tool's "
         "launcher, so the browser login callback opens Native Access in its "
         "Wine prefix, where there is no NTK daemon and it hangs on 'grant "
@@ -354,9 +407,7 @@ def _seed_allow(pref_file: Path) -> bool:
         prefs = json.loads(text)
     except (OSError, json.JSONDecodeError):
         return False
-    pairs = prefs.setdefault("protocol_handler", {}).setdefault(
-        "allowed_origin_protocol_pairs", {}
-    )
+    pairs = prefs.setdefault("protocol_handler", {}).setdefault("allowed_origin_protocol_pairs", {})
     changed = False
     for origin in _NI_LOGIN_ORIGINS:
         entry = pairs.setdefault(origin, {})
@@ -372,46 +423,58 @@ def _seed_allow(pref_file: Path) -> bool:
 def _browser_checks(fix: bool) -> list[Check]:
     found = _default_browser_root()
     if found is None:
-        return [Check(
-            "browser login authorization",
-            True,
-            "default browser is not Chromium-family or not detected, "
-            "approve the 'Open Native Access?' prompt manually on login",
-            required=False,
-        )]
+        return [
+            Check(
+                "browser login authorization",
+                True,
+                "default browser is not Chromium-family or not detected, "
+                "approve the 'Open Native Access?' prompt manually on login",
+                required=False,
+            )
+        ]
     name, root = found
     pref_file = root / "Default" / "Preferences"
     origins = _allowed_origins(pref_file) if pref_file.is_file() else []
 
     if all(origin in origins for origin in _NI_LOGIN_ORIGINS):
-        return [Check(f"{name}: login callback pre-authorized", True,
-                      required=False)]
+        return [Check(f"{name}: login callback pre-authorized", True, required=False)]
 
     if not fix:
-        return [Check(
-            f"{name}: login callback not pre-authorized",
-            True,
-            "the browser will ask on login, `ni doctor --fix` can pre-authorize it",
-            required=False,
-        )]
+        return [
+            Check(
+                f"{name}: login callback not pre-authorized",
+                True,
+                "the browser will ask on login, `ni doctor --fix` can pre-authorize it",
+                required=False,
+            )
+        ]
 
     if _browser_running(root):
-        return [Check(
+        return [
+            Check(
+                f"{name}: login callback authorization",
+                False,
+                f"close {name} and re-run `ni doctor --fix`",
+                required=False,
+            )
+        ]
+    if pref_file.is_file() and _seed_allow(pref_file):
+        return [
+            Check(
+                f"{name}: login callback pre-authorized",
+                True,
+                "NI login origins may now open Native Access without asking",
+                required=False,
+            )
+        ]
+    return [
+        Check(
             f"{name}: login callback authorization",
             False,
-            f"close {name} and re-run `ni doctor --fix`",
+            "could not update browser preferences",
             required=False,
-        )]
-    if pref_file.is_file() and _seed_allow(pref_file):
-        return [Check(
-            f"{name}: login callback pre-authorized", True,
-            "NI login origins may now open Native Access without asking",
-            required=False,
-        )]
-    return [Check(
-        f"{name}: login callback authorization", False,
-        "could not update browser preferences", required=False,
-    )]
+        )
+    ]
 
 
 def run_doctor(prefix: Path, *, fix: bool = False) -> int:
@@ -453,8 +516,10 @@ def run_doctor(prefix: Path, *, fix: bool = False) -> int:
 
     failures = [c for c in checks if not c.ok and c.required]
     if failures:
-        print(f"\n{len(failures)} problem(s) found."
-              + ("" if fix else "  Some are fixable with `ni doctor --fix`."))
+        print(
+            f"\n{len(failures)} problem(s) found."
+            + ("" if fix else "  Some are fixable with `ni doctor --fix`.")
+        )
         return 1
     print("\nAll good.")
     return 0

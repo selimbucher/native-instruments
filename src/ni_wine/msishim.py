@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 from . import config
-from .util import info, warn
+from .util import info
 from .wine import Wine
 
 ENGINE_EXE = "Kontakt 8 Setup PC.exe"
@@ -88,7 +88,10 @@ def _read(path: Path, limit: int = 1 << 20) -> bytes:
 
 def is_wine_builtin(path: Path) -> bool:
     data = _read(path, 128)
-    return data[_BUILTIN_MARKER_OFFSET:_BUILTIN_MARKER_OFFSET + len(_BUILTIN_MARKER)] == _BUILTIN_MARKER
+    return (
+        data[_BUILTIN_MARKER_OFFSET : _BUILTIN_MARKER_OFFSET + len(_BUILTIN_MARKER)]
+        == _BUILTIN_MARKER
+    )
 
 
 def is_shim(path: Path) -> bool:

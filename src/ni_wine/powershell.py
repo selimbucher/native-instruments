@@ -30,12 +30,9 @@ _PWSH_VERSION = "7.4.11"
 _PWSH_SHA256 = "9579011c463a3ad6abf890736a97e2fbba9a7b4e09ce851576ccf263e15bdc97"
 _PWSH_MSI = f"PowerShell-{_PWSH_VERSION}-win-x64.msi"
 _PWSH_URL = (
-    "https://github.com/PowerShell/PowerShell/releases/download/"
-    f"v{_PWSH_VERSION}/{_PWSH_MSI}"
+    f"https://github.com/PowerShell/PowerShell/releases/download/v{_PWSH_VERSION}/{_PWSH_MSI}"
 )
-_WRAPPER_URL = (
-    "https://codeberg.org/Synchro/powershell-wrapper-for-wine/releases/download/latest"
-)
+_WRAPPER_URL = "https://codeberg.org/Synchro/powershell-wrapper-for-wine/releases/download/latest"
 # On a 64-bit prefix system32 holds the 64-bit binaries, syswow64 the 32-bit.
 _WRAPPER_EXES = [("powershell64.exe", "system32"), ("powershell32.exe", "syswow64")]
 
@@ -65,9 +62,16 @@ def install_powershell(wine: Wine, display: str | None = None) -> None:
     msi = _fetch_msi()
     result = wine.run(
         [
-            "msiexec", "/quiet", "/i", str(msi),
-            "ENABLE_PSREMOTING=0", "REGISTER_MANIFEST=1", "DISABLE_TELEMETRY=1",
-            "USE_MU=0", "ENABLE_MU=0", "LAUNCHAPPONEXIT=0",
+            "msiexec",
+            "/quiet",
+            "/i",
+            str(msi),
+            "ENABLE_PSREMOTING=0",
+            "REGISTER_MANIFEST=1",
+            "DISABLE_TELEMETRY=1",
+            "USE_MU=0",
+            "ENABLE_MU=0",
+            "LAUNCHAPPONEXIT=0",
         ],
         display=display,
     )
@@ -84,7 +88,9 @@ def install_powershell(wine: Wine, display: str | None = None) -> None:
                 die(f"the download of {name} is not a Windows executable")
         target = (
             config.drive_c(wine.prefix)
-            / "windows" / system_dir / "WindowsPowerShell/v1.0/powershell.exe"
+            / "windows"
+            / system_dir
+            / "WindowsPowerShell/v1.0/powershell.exe"
         )
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(exe, target)

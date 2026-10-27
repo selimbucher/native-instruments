@@ -36,16 +36,12 @@ def cache_dir() -> Path:
 
 
 def state_dir() -> Path:
-    base = Path(
-        os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))
-    )
+    base = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state")))
     return base / APP_NAME
 
 
 def data_home() -> Path:
-    return Path(
-        os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local" / "share"))
-    )
+    return Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local" / "share")))
 
 
 def config_home() -> Path:
@@ -93,12 +89,7 @@ def na_roaming_dir(prefix: Path) -> Path:
 
 def updater_dir(prefix: Path) -> Path:
     """electron-updater's download cache for Native Access self-updates."""
-    return (
-        drive_c(prefix)
-        / "users"
-        / wine_user(prefix)
-        / "AppData/Local/nativeaccess2-updater"
-    )
+    return drive_c(prefix) / "users" / wine_user(prefix) / "AppData/Local/nativeaccess2-updater"
 
 
 KONTAKT8_PREFIX_PATHS = [

@@ -47,7 +47,15 @@ _SKIP = re.compile(
 # Folders every vendor installs into: always real directories in the DAW
 # prefix, so that what gets installed there later stays there.
 _SHARED = {
-    "common files", "vst2", "vst3", "clap", "vstplugins", "steinberg", "avid", "audio", "plug-ins",
+    "common files",
+    "vst2",
+    "vst3",
+    "clap",
+    "vstplugins",
+    "steinberg",
+    "avid",
+    "audio",
+    "plug-ins",
 }
 
 # Registry subtrees, spelled as in Wine's .reg files (keys relative to HKLM
@@ -281,7 +289,8 @@ def sync(prefix: Path, target: Path, *, first: bool = False) -> None:
     # user's settings, which the DAW prefix keeps once it has them.
     machine = [k for k in _MACHINE_KEYS if _present(src_system_sections, k)]
     user = [
-        k for k in _USER_KEYS
+        k
+        for k in _USER_KEYS
         if _present(src_user_sections, k) and not _present(dst_user_sections, k)
     ]
     new_system = _set_machine_guid(_merge(src_system, dst_system, machine), guid)

@@ -8,8 +8,8 @@ import sys
 from pathlib import Path
 
 from . import config, daemon, msishim
-from .msvcp140 import fix_msvcp140
 from .desktop import ensure_url_handler
+from .msvcp140 import fix_msvcp140
 from .powershell import install_powershell, install_profile
 from .ui import Progress
 from .util import die, download, guarded_rmtree, info, warn
@@ -47,9 +47,7 @@ def _unlink_home_symlinks(prefix: Path) -> None:
         if link.is_symlink():
             link.unlink()
             link.mkdir(parents=True, exist_ok=True)
-    (config.drive_c(prefix) / "users/Public/Downloads").mkdir(
-        parents=True, exist_ok=True
-    )
+    (config.drive_c(prefix) / "users/Public/Downloads").mkdir(parents=True, exist_ok=True)
 
 
 def _require_win32(prefix: Path) -> None:
@@ -98,8 +96,7 @@ def _winetricks(wine: Wine, verb: str, display: str | None) -> None:
     if result.returncode != 0:
         tail = log_path.read_text(errors="replace").splitlines()
         print("\n".join(tail[-15:]), file=sys.stderr, flush=True)
-        die(f"winetricks {verb} failed (exit {result.returncode}) "
-            f"- full log: {log_path}")
+        die(f"winetricks {verb} failed (exit {result.returncode}), full log: {log_path}")
 
 
 def _discard_incomplete_prefix(wine: Wine) -> None:
@@ -144,9 +141,7 @@ def run_setup(prefix: Path, *, ui: bool = False) -> None:
     # reinstall, and mkdir through a dangling link fails.
     config.drive_c(prefix.resolve()).mkdir(parents=True, exist_ok=True)
 
-    with Progress("Native Instruments Setup", enabled=ui) as progress, \
-            hidden_display() as display:
-
+    with Progress("Native Instruments Setup", enabled=ui) as progress, hidden_display() as display:
         progress.step("Initializing Wine prefix...", 5)
         # DISPLAY="" keeps wineboot's "updating configuration" dialog off
         # the user's desktop when no hidden display is available.
