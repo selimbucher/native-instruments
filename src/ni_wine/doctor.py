@@ -114,18 +114,22 @@ def _dependency_checks(prefix: Path) -> list[Check]:
 
 
 def _prefix_checks(prefix: Path) -> list[Check]:
-    checks = [
-        Check(
-            f"Wine prefix at {prefix}",
-            config.drive_c(prefix).is_dir(),
-            "" if config.drive_c(prefix).is_dir() else "run `ni setup`",
-        )
-    ]
     if not config.drive_c(prefix).is_dir():
-        return checks
+        return [Check(f"Wine prefix at {prefix}", False, "run `ni setup`")]
+    return [
+        Check(f"Wine prefix at {prefix}", True),
+        *_wine_build_checks(prefix),
+        *_install_checks(prefix),
+        *_daemon_checks(prefix),
+        *_kontakt_checks(prefix),
+        *_registry_checks(prefix),
+        _residue_check(prefix),
+    ]
 
+
+def _wine_build_checks(prefix: Path) -> list[Check]:
     wow64 = (config.drive_c(prefix) / "windows/syswow64/regedit.exe").is_file()
-    checks.append(
+    checks = [
         Check(
             "32-bit (WoW64) support in the prefix",
             wow64,
@@ -136,49 +140,47 @@ def _prefix_checks(prefix: Path) -> list[Check]:
             "wine-staging; Debian/Ubuntu: winehq-staging or wine32) "
             "and run `ni reinstall`",
         )
-    )
+    ]
     try:
         recorded = (prefix / _BUILD_MARKER).read_text().strip()
     except OSError:
         recorded = ""
-    if recorded:
-        wine = os.environ.get("WINE") or session_wine(prefix) or which_first("wine")
-        current = wine_build_id(wine) if wine else None
-        matches = current is None or recorded == current
-        checks.append(
-            Check(
-                "prefix Wine build",
-                matches,
-                recorded
-                if matches
-                else f"{recorded}, but current Wine is {current}, "
-                "the prefix is migrated on next launch",
-                required=False,
-            )
-        )
+    if not recorded:
+        return checks
+    wine = os.environ.get("WINE") or session_wine(prefix) or which_first("wine")
+    current = wine_build_id(wine) if wine else None
+    matches = current is None or recorded == current
     checks.append(
         Check(
-            "Native Access installed",
-            config.na_exe(prefix).is_file(),
-            "" if config.na_exe(prefix).is_file() else "run `ni setup`",
+            "prefix Wine build",
+            matches,
+            recorded
+            if matches
+            else f"{recorded}, but current Wine is {current}, "
+            "the prefix is migrated on next launch",
+            required=False,
         )
     )
-    checks.append(
+    return checks
+
+
+def _install_checks(prefix: Path) -> list[Check]:
+    na = config.na_exe(prefix).is_file()
+    installed = daemon.installed(prefix)
+    registered = daemon.service_registered(prefix)
+    checks = [
+        Check("Native Access installed", na, "" if na else "run `ni setup`"),
         Check(
             "NTKDaemon installed",
-            daemon.installed(prefix),
-            "" if daemon.installed(prefix) else "installed automatically on next `ni launch`",
-        )
-    )
-    checks.append(
+            installed,
+            "" if installed else "installed automatically on next `ni launch`",
+        ),
         Check(
             f"NTKDaemon service ({daemon.SERVICE}) registered",
-            daemon.service_registered(prefix),
-            ""
-            if daemon.service_registered(prefix)
-            else "reinstalled automatically on next `ni launch`",
-        )
-    )
+            registered,
+            "" if registered else "reinstalled automatically on next `ni launch`",
+        ),
+    ]
     if powershell.pwsh_installed(prefix):
         current = powershell.profile_current(prefix)
         checks.append(
@@ -191,8 +193,14 @@ def _prefix_checks(prefix: Path) -> list[Check]:
                 "NA's daemon install, run `ni doctor --fix`",
             )
         )
+    return checks
+
+
+def _daemon_checks(prefix: Path) -> list[Check]:
     others = daemon.foreign(prefix)
-    checks.append(
+    running = daemon.running(prefix)
+    stale = daemon.stale_locks(prefix)
+    return [
         Check(
             "no NTK daemon from another prefix",
             not others,
@@ -200,11 +208,7 @@ def _prefix_checks(prefix: Path) -> list[Check]:
             if not others
             else "; ".join(f"pid {pid} serves {other}" for pid, other in others)
             + ", Native Access would use that prefix's login, stop it first",
-        )
-    )
-    is_running = daemon.running(prefix)
-    stale = daemon.stale_locks(prefix)
-    checks.append(
+        ),
         Check(
             "no stale NI lock files",
             not stale,
@@ -212,20 +216,23 @@ def _prefix_checks(prefix: Path) -> list[Check]:
             if not stale
             else f"{len(stale)} in ProgramData/boost_interprocess make the daemon's "
             "product scan take 15 minutes; removed by the next launch or `ni doctor --fix`",
-        )
-    )
-    checks.append(
+        ),
         Check(
             "NTK daemon running",
-            is_running,
+            running,
             ""
-            if is_running
+            if running
             else "started by `ni launch` (or `ni doctor --fix`), Native "
             "Access hangs on 'grant permission' without it",
             required=False,
-        )
-    )
-    if config.kontakt8_exe(prefix).is_file():
+        ),
+    ]
+
+
+def _kontakt_checks(prefix: Path) -> list[Check]:
+    installed = config.kontakt8_exe(prefix).is_file()
+    checks: list[Check] = []
+    if installed:
         registered = kontakt.registry_complete(prefix)
         checks.append(
             Check(
@@ -237,18 +244,14 @@ def _prefix_checks(prefix: Path) -> list[Check]:
                 "refresh, run `ni doctor --fix`",
             )
         )
-    checks.append(
+    hook_ok = msishim.installed(prefix) and msishim.current(prefix)
+    checks += [
         Check(
             "Kontakt 8 installed",
-            config.kontakt8_exe(prefix).is_file(),
-            ""
-            if config.kontakt8_exe(prefix).is_file()
-            else "optional, install it in Native Access",
+            installed,
+            "" if installed else "optional, install it in Native Access",
             required=False,
-        )
-    )
-    hook_ok = msishim.installed(prefix) and msishim.current(prefix)
-    checks.append(
+        ),
         Check(
             "Kontakt installer hook (msi shim) installed",
             hook_ok,
@@ -257,41 +260,40 @@ def _prefix_checks(prefix: Path) -> list[Check]:
             else f"{msishim.describe(prefix)}, Native Access cannot install "
             "Kontakt without it, armed by `native-access` or `ni doctor --fix`",
             required=False,
-        )
-    )
+        ),
+    ]
+    return checks
 
-    reg_text = ""
+
+def _registry_checks(prefix: Path) -> list[Check]:
     try:
         reg_text = (prefix / "user.reg").read_text(errors="replace")
     except OSError:
-        pass
+        reg_text = ""
     tray_off = TRAY_DISABLED_MARKER in reg_text
-    checks.append(
-        Check("tray-icon window disabled", tray_off, "" if tray_off else "run `ni doctor --fix`")
-    )
-    scheme_registered = urlscheme.registered(Wine(prefix))
-    checks.append(
+    scheme = urlscheme.registered(Wine(prefix))
+    return [
+        Check("tray-icon window disabled", tray_off, "" if tray_off else "run `ni doctor --fix`"),
         Check(
             "native-access:// registered in prefix (Kontakt's Activate button)",
-            scheme_registered,
+            scheme,
             ""
-            if scheme_registered
+            if scheme
             else "armed by `native-access` or `ni doctor --fix` "
             "(a fresh registration shows here once Wine has flushed the registry)",
-        )
-    )
+        ),
+    ]
 
+
+def _residue_check(prefix: Path) -> Check:
     updater = config.updater_dir(prefix)
     residue = updater.is_dir() and any(updater.iterdir())
-    checks.append(
-        Check(
-            "no self-update leftovers",
-            not residue,
-            "" if not residue else "old update downloads waste disk, run `ni doctor --fix`",
-            required=False,
-        )
+    return Check(
+        "no self-update leftovers",
+        not residue,
+        "" if not residue else "old update downloads waste disk, run `ni doctor --fix`",
+        required=False,
     )
-    return checks
 
 
 def _elevation_check(prefix: Path) -> Check:
