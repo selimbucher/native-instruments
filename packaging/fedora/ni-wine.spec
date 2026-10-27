@@ -11,6 +11,7 @@ BuildRequires:  python3-devel
 BuildRequires:  mingw32-gcc
 BuildRequires:  make
 BuildRequires:  desktop-file-utils
+BuildRequires:  python3-pytest
 
 Requires:       wine >= 11
 Requires:       winetricks
@@ -53,6 +54,7 @@ install -Dm644 src/ni_wine/data/native-access.svg \
 
 %check
 %pyproject_check_import
+%pytest
 desktop-file-validate %{buildroot}%{_datadir}/applications/native-access.desktop
 
 %files -f %{pyproject_files}

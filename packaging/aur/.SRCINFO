@@ -11,6 +11,7 @@ pkgbase = ni-wine
 	makedepends = python-wheel
 	makedepends = python-setuptools
 	makedepends = mingw-w64-gcc
+	checkdepends = python-pytest
 	depends = python
 	depends = wine>=11
 	depends = winetricks

@@ -12,6 +12,7 @@ depends=('python' 'wine>=11' 'winetricks' 'cabextract' '7zip' 'msitools'
          'desktop-file-utils' 'hicolor-icon-theme')
 makedepends=('git' 'python-build' 'python-installer' 'python-wheel' 'python-setuptools'
              'mingw-w64-gcc')
+checkdepends=('python-pytest')
 optdepends=('wine-staging: recommended Wine build for Native Instruments'
             'xdotool: repositions off-screen windows on X11 desktops'
             'yad: nicer-looking setup progress dialog')
@@ -27,6 +28,11 @@ build() {
   make -C shim CC=i686-w64-mingw32-gcc
   cp shim/msi_shim32.dll src/ni_wine/data/msi_shim32.dll
   python -m build --wheel --no-isolation
+}
+
+check() {
+  cd "$pkgname"
+  python -m pytest
 }
 
 package() {

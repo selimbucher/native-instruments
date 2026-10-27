@@ -7,6 +7,7 @@ Build-Depends: debhelper-compat (= 13),
                python3-all,
                python3-setuptools,
                pybuild-plugin-pyproject,
+               python3-pytest,
                gcc-mingw-w64-i686
 Standards-Version: 4.6.2
 Homepage: https://github.com/selimbucher/native-instruments

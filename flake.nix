@@ -52,6 +52,8 @@
 
         makeWrapperArgs = [ "--prefix" "PATH" ":" runtimePath ];
 
+        nativeCheckInputs = [ pkgs.python3Packages.pytestCheckHook ];
+
         postInstall = ''
           install -Dm644 src/ni_wine/data/native-access.desktop \
             $out/share/applications/native-access.desktop
@@ -103,6 +105,7 @@
           ni-wine
           pkgs.ruff
           pkgs.python3
+          pkgs.python3Packages.pytest
         ];
         shellHook = ''
           export WINEPREFIX="$HOME/.wine-ni"
