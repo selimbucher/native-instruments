@@ -11,8 +11,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      # checkout fetches the tag without its annotation, and --notes-from-tag
-      # would then use the commit message instead of the release notes.
+      # checkout fetches the tag without its annotation, --notes-from-tag
+      # would then use the commit message
       - run: git fetch --force origin "$GITHUB_REF:$GITHUB_REF"
       - run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-from-tag
         env:
@@ -23,8 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # release.sh commits the PKGBUILD bump after the tag (a commit can't
-      # hold its own hash), so the tagged PKGBUILD is still the previous
-      # release's. Pin it here; the action regenerates .SRCINFO.
+      # hold its own hash), so pin it here. The action regenerates .SRCINFO.
       - name: Pin PKGBUILD to this release
         run: |
           sed -i "s/^pkgver=.*/pkgver=${GITHUB_REF_NAME#v}/; s/^pkgrel=.*/pkgrel=1/; s/^_commit=.*/_commit=$GITHUB_SHA/" \
@@ -68,8 +67,8 @@ jobs:
           umask 077
           printf '%s' "$PPA_GPG_PASSPHRASE" > /tmp/pw
 
-          # Ask Launchpad whether it already has a version. Pending counts:
-          # a just-accepted upload sits in that state before publishing.
+          # does Launchpad already have this version? Pending counts, a just
+          # accepted upload sits there before publishing
           in_ppa() {
             curl -fsS "https://api.launchpad.net/1.0/~selimbucher/+archive/ubuntu/ni-wine?ws.op=getPublishedSources&source_name=ni-wine&exact_match=true&version=$1" \
               | grep -q '"total_size": [1-9]'
@@ -78,8 +77,8 @@ jobs:
           base=$(head -1 debian/changelog)
           for s in $SERIES; do
             sed -i "1s/.*/$(printf '%s' "$base" | sed "s/~noble1) noble/~${s}1) ${s}/")/" debian/changelog
-            # Skip series already in the PPA, so a failed upload can simply
-            # be re-run (Launchpad rejects a version it already has).
+            # skip series already in the PPA so a failed run can be re-run
+            # (Launchpad rejects a version it already has)
             v=$(dpkg-parsechangelog -S Version)
             if in_ppa "$v"; then
               echo "$v is already in the PPA"
@@ -90,17 +89,12 @@ jobs:
             changes=$(ls ../ni-wine_*~${s}1_source.changes)
             debsign -p'gpg --batch --pinentry-mode loopback --passphrase-file /tmp/pw' "$changes"
 
-            # Launchpad's FTP endpoint intermittently answers "550 Requested
-            # action not taken: internal server error" -- always at the
-            # transfer, never in the build, lintian or signing steps. It
-            # cost the resolute series on both 2.4.0 and 2.4.1; a plain
-            # retry is what eventually got 2.4.1 through. Ask Launchpad
-            # what it actually has between attempts, so a transfer that did
-            # arrive before erroring is not uploaded a second time, and give
-            # up only once the version has really not landed.
-            # -f because dput otherwise refuses a file it has a local
-            # .upload record for; in_ppa above is what prevents a genuine
-            # duplicate.
+            # Launchpad's FTP intermittently answers "550 internal server
+            # error" at the transfer (cost resolute on 2.4.0 and 2.4.1, a
+            # retry got it through). Check what Launchpad has between
+            # attempts so a transfer that arrived before the error isn't
+            # uploaded twice. -f because dput refuses a file with a local
+            # .upload record, in_ppa prevents real duplicates.
             for attempt in 1 2 3; do
               if dput -f ppa:selimbucher/ni-wine "$changes"; then
                 break
@@ -130,9 +124,8 @@ jobs:
           pipx install copr-cli
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      # Pin the package's committish to this tag and build it, so COPR ships
-      # the exact released commit (not a moving branch HEAD). The RPM version
-      # comes from the spec; a later manual Rebuild also stays on this tag.
+      # pin the package to this tag and build, so COPR ships the released
+      # commit and a later manual rebuild stays on it
       - name: Build the tagged commit on COPR
         env:
           COPR_CONFIG: ${{ secrets.COPR_CONFIG }}

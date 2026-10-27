@@ -28,7 +28,7 @@ environment:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ni",
-        description="Native Instruments software under Wine, setup, launch, and product management.",
+        description="Native Instruments software under Wine: setup, launch and product management.",
         epilog=_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -61,7 +61,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     reinstall.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
 
-    # Internal: what the hook script calls from inside Wine. Unlisted.
+    # internal, called by the hook script from inside Wine
     apply = commands.add_parser("apply-installer")
     apply.add_argument("package")
 
@@ -92,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     prefix = (args.prefix or config.default_prefix()).expanduser()
 
-    # Imports are deferred so `ni --help` stays instant.
+    # imports deferred so `ni --help` stays fast
     if args.command == "setup":
         from .setup_cmd import run_setup
 
@@ -135,9 +135,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def native_access_main(argv: list[str] | None = None) -> int:
-    """Entry point for `native-access`: the desktop entry, the browser login
-    callback, and the command a user types. Identical to `ni launch`.
-    """
+    """`native-access`: the desktop entry and the browser callback, same as `ni launch`."""
     parser = argparse.ArgumentParser(
         prog="native-access",
         description="Start Native Access under Wine (the same as `ni launch`).",

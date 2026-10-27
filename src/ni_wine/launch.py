@@ -1,5 +1,3 @@
-"""Launch Native Access, repairing common launch blockers first."""
-
 from __future__ import annotations
 
 import json
@@ -24,9 +22,9 @@ from .wine import (
 )
 
 _OFFLINE_MESSAGE = (
-    "No connection to native-instruments.com, Native Access has no offline "
+    "No connection to native-instruments.com. Native Access has no offline "
     "mode and will show 'Loading products failed'. Installed instruments and "
-    "plugins keep working offline."
+    "plugins keep working."
 )
 
 
@@ -38,11 +36,8 @@ def native_access_running() -> bool:
 
 
 def clear_updater_residue(prefix: Path) -> bool:
-    """Drop Native Access's self-update download cache (can be ~370 MB).
-
-    electron-updater leaves the downloaded installer behind after a
-    successful update and re-validates/re-downloads on demand, so deleting
-    the directory is always safe, as long as Native Access isn't running.
+    """Delete NA's self-update download cache (up to ~370 MB). electron-updater re-downloads on
+    demand, safe while NA isn't running.
     """
     updater = config.updater_dir(prefix)
     if not updater.is_dir() or not any(updater.iterdir()):
@@ -55,11 +50,8 @@ def clear_updater_residue(prefix: Path) -> bool:
 
 
 def _screen_size() -> tuple[int, int] | None:
-    """Usable desktop extent in the coordinate space NA saves positions in.
-
-    Under XWayland that is the compositor's logical space, so prefer
-    Hyprland's own answer (physical size / scale) and fall back to X11
-    geometry, which matches on unscaled displays.
+    """Desktop size in the coordinates NA saves window positions in: Hyprland's logical size under
+    XWayland, else X11 geometry.
     """
     if shutil.which("hyprctl") and os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
         result = subprocess.run(["hyprctl", "monitors", "-j"], capture_output=True, text=True)
@@ -82,11 +74,8 @@ def _screen_size() -> tuple[int, int] | None:
 
 
 def fix_offscreen_window_state(prefix: Path) -> None:
-    """Pull Native Access's remembered window position back on-screen.
-
-    NA restores its saved window position unconditionally; after a monitor
-    or scale change that position can be entirely off-screen, the app then
-    runs healthy but invisible.
+    """Move NA's saved window position back on screen. After a monitor or scale change it can be
+    entirely off screen and NA runs invisible.
     """
     screen = _screen_size()
     if screen is None:
@@ -106,7 +95,7 @@ def fix_offscreen_window_state(prefix: Path) -> None:
             and all(isinstance(state[k], int) for k in ("x", "y"))
         ):
             continue
-        # Keep at least a grabbable corner of the window visible.
+        # keep at least a grabbable corner visible
         new_x = min(max(0, state["x"]), max(0, screen_w - 100))
         new_y = min(max(0, state["y"]), max(0, screen_h - 100))
         if (new_x, new_y) != (state["x"], state["y"]):
@@ -116,14 +105,9 @@ def fix_offscreen_window_state(prefix: Path) -> None:
 
 
 def ui_scale() -> tuple[float, str, bool]:
-    """The scale Native Access renders at: (factor, its source, valid).
-
-    Wine hands its windows to the compositor unscaled, so wherever X11 apps
-    have to scale themselves (Hyprland with xwayland:force_zero_scaling, a
-    HiDPI X11 session) Native Access comes up tiny. GDK_SCALE is how those
-    setups give X11 toolkits the factor; NI_WINE_SCALE overrides it. Where
-    the compositor scales X11 apps itself, neither is set and NA is left
-    alone.
+    """Scale factor for NA as (factor, source, valid). Wine windows reach the compositor unscaled,
+    so with force_zero_scaling or HiDPI X11 NA comes up tiny. GDK_SCALE is what those setups set,
+    NI_WINE_SCALE overrides it.
     """
     for var in ("NI_WINE_SCALE", "GDK_SCALE"):
         raw = os.environ.get(var, "").strip()
@@ -163,13 +147,11 @@ def run_launch(prefix: Path, url: str | None = None) -> int:
         run_setup(prefix, ui=True)
 
     wine = Wine(prefix)
-    # Native Access exits silently (Crashpad swallows the crash) on Wine
-    # builds that are too old, refuse loudly instead.
+    # on a too old Wine NA exits silently (Crashpad swallows the crash)
     check_wine_version(wine)
     ensure_prefix_build(wine)
-    # explorer.exe reads the tray settings only at startup -- but never
-    # take the server down under Kontakt or a plugin host (we may have been
-    # started by Kontakt's Activate button).
+    # explorer.exe reads the tray settings at startup only, but don't kill the
+    # server under Kontakt or a plugin host (Kontakt's Activate button starts us)
     if apply_prefix_tweaks(wine) and not prefix_in_use(prefix):
         wine.kill_server()
     clear_updater_residue(prefix)
@@ -184,21 +166,20 @@ def run_launch(prefix: Path, url: str | None = None) -> int:
     if install_profile(prefix):
         info("installed ni-wine's PowerShell profile in the prefix")
 
-    # Native Access must find its daemon running (see daemon.py); refuse to
-    # launch into the stuck screen otherwise. On the first start after boot
-    # the daemon still needs time to build its product list; NA may briefly
-    # show "library empty" with a working Retry.
+    # NA needs its daemon running (see daemon.py), otherwise it gets stuck.
+    # Right after boot the daemon still builds its product list and NA may
+    # briefly show an empty library, Retry works.
     problem = daemon.ensure(wine, prefix)
     if problem:
         die(problem)
 
-    # Lets Native Access install/update Kontakt like any other product.
+    # lets NA install and update Kontakt like any other product
     problem = msishim.ensure(wine, prefix)
     if problem:
         warn(f"Kontakt installer hook not armed: {problem}")
 
-    # A Kontakt laid out by an older ni-wine lacks the registry values the
-    # daemon judges installs by; Native Access would offer to install it again.
+    # a Kontakt installed by an older ni-wine lacks the registry values the
+    # daemon checks, NA would offer to install it again
     if kontakt.repair_registry(prefix):
         info("registered the existing Kontakt 8 install for Native Access")
 
@@ -214,11 +195,10 @@ def run_launch(prefix: Path, url: str | None = None) -> int:
     debug = "NI_WINE_DEBUG" in os.environ
     extra_env: dict[str, str] = {} if debug else {"WINEDEBUG": "-all"}
 
-    # NA's Electron runtime crashes with "open EBADF" if any stdio fd is
-    # closed (desktop launchers don't guarantee them), so give it /dev/null
-    # instead of inheriting ours, unless debug output was asked for.
+    # Electron crashes with "open EBADF" when a stdio fd is closed (desktop
+    # launchers don't guarantee them), so give it /dev/null unless debugging
     result = wine.run(args, extra_env=extra_env, quiet=not debug)
-    # DAW prefixes set up with `ni link` pick up what was just installed.
+    # DAW prefixes set up with `ni link` pick up what was just installed
     link.sync_all(prefix)
     return result.returncode
 
@@ -243,8 +223,8 @@ def run_reinstall(prefix: Path, *, assume_yes: bool = False) -> None:
     info("killing Wine session...")
     wine = Wine(prefix)
     wine.kill_server()
-    # Wait until wineserver has fully exited: it rewrites the registry
-    # files on shutdown, which would resurrect parts of the deleted prefix.
+    # wait for wineserver to exit, it rewrites the registry files on shutdown
+    # and would resurrect parts of the deleted prefix
     try:
         wine.wait_server()
     except subprocess.TimeoutExpired:

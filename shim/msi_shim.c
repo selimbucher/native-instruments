@@ -11,7 +11,7 @@
  * already extracted) and returns the hook's result; anything else goes
  * straight through.
  *
- * Tiny on purpose: no network, no crypto, kernel32 and user32 (wsprintfA)
+ * No CRT, no network, no crypto, imports kernel32 and user32 (wsprintfA)
  * only. All policy (which package, which hook) is in msi_shim.cfg, written
  * by ni-wine. `winedump -j export msi_shim32.dll` shows every export except
  * MsiInstallProductA/W as a five-byte jump.

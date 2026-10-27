@@ -1,5 +1,3 @@
-"""Small shared helpers: logging, downloads, safe deletion."""
-
 from __future__ import annotations
 
 import email.utils
@@ -25,8 +23,7 @@ def warn(msg: str) -> None:
 
 
 def _wrap(msg: str, width: int = 72) -> str:
-    """Wrap overlong lines only: keeps the message's own line breaks and
-    indentation, and never splits a word (a path, a package-name)."""
+    """Wrap long lines, keep existing line breaks and indentation, never split words."""
     lines = []
     for line in msg.splitlines():
         indent = line[: len(line) - len(line.lstrip())]
@@ -48,14 +45,13 @@ def _error_dialog(msg: str) -> None:
     tool = which_first("zenity", "yad")
     if not tool:
         return
-    # A dialog lays a long message out as one line as wide as the screen.
+    # otherwise the dialog gets as wide as the longest line
     msg = _wrap(msg)
     if tool.endswith("zenity"):
         args = [tool, "--error", "--no-markup", "--title=ni-wine", f"--text={msg}"]
     else:
-        # --text-width: see ui.Progress; the rest makes the window Native
-        # Access's to a taskbar. yad unescapes --text even with
-        # --no-markup, which ate the backslashes of Windows paths.
+        # --name/--class/--window-icon: taskbars show it as Native Access.
+        # yad unescapes --text even with --no-markup, so double the backslashes.
         text = msg.replace("\\", "\\\\")
         args = [
             tool,
@@ -77,15 +73,13 @@ def _error_dialog(msg: str) -> None:
 
 def die(msg: str, code: int = 1) -> NoReturn:
     print(f"error: {msg}", file=sys.stderr, flush=True)
-    # Desktop launches (.desktop sets NI_WINE_GUI=1) have no console; a
-    # fatal error must surface somewhere the user can see it.
+    # started from the .desktop entry (NI_WINE_GUI=1) there is no console
     if os.environ.get("NI_WINE_GUI"):
         _error_dialog(msg)
     raise SystemExit(code)
 
 
 def which_first(*names: str) -> str | None:
-    """First of *names* found on PATH."""
     for name in names:
         path = shutil.which(name)
         if path:
@@ -94,14 +88,10 @@ def which_first(*names: str) -> str | None:
 
 
 def download(url: str, dest: Path, label: str | None = None) -> Path:
-    """Download *url* to *dest* with a progress bar.
-
-    If *dest* already exists, an If-Modified-Since request avoids
-    re-downloading an unchanged file (same behaviour as `curl -z`).
-    """
+    """Download url to dest with a progress bar, If-Modified-Since like curl -z."""
     dest.parent.mkdir(parents=True, exist_ok=True)
-    # No custom User-Agent: Akamai (fronting native-instruments.com) 403s
-    # unrecognized UA strings but lets urllib's default through.
+    # no custom User-Agent: Akamai in front of native-instruments.com 403s
+    # unknown UA strings but lets urllib's default through
     request = urllib.request.Request(url)
     if dest.exists():
         mtime = dest.stat().st_mtime
@@ -134,7 +124,7 @@ def download(url: str, dest: Path, label: str | None = None) -> Path:
     if show_bar:
         sys.stderr.write("\n")
 
-    # Preserve the server's Last-Modified so future If-Modified-Since checks work.
+    # keep the server's Last-Modified for the next If-Modified-Since
     last_modified = response.headers.get("Last-Modified")
     part.replace(dest)
     if last_modified:
@@ -145,13 +135,8 @@ def download(url: str, dest: Path, label: str | None = None) -> Path:
 
 
 def guarded_rmtree(path: Path, *, prefix: Path) -> None:
-    """Delete the Wine prefix *prefix*, or a directory tree inside it.
-
-    Only *prefix* itself and paths inside it are accepted, and only if it
-    is a Wine prefix (has a drive_c), at least two components deep, and
-    neither `/` nor the home directory. Where it lives does not matter:
-    NI_WINE_PREFIX can point at another disk. This is a backstop against
-    bugs of the "rm -rf $UNSET_VAR/" family.
+    """Delete the prefix or a tree inside it. Refuses /, $HOME, shallow paths, anything outside the
+    prefix and a prefix without drive_c, a backstop against rm -rf $UNSET/ bugs.
     """
     resolved = path.expanduser().resolve()
     root = prefix.expanduser().resolve()
@@ -165,6 +150,5 @@ def guarded_rmtree(path: Path, *, prefix: Path) -> None:
         raise RuntimeError(f"refusing to delete {resolved}: {root} is not a Wine prefix")
     shutil.rmtree(resolved, ignore_errors=True)
     if resolved.exists():
-        # A partial wipe (e.g. files still held open by a live process) must
-        # not pass silently: setup on top of prefix remnants breaks Wine.
+        # partial wipe (files still held open), setup on top of remnants breaks Wine
         raise RuntimeError(f"failed to fully delete {resolved}")

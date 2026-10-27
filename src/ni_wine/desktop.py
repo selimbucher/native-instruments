@@ -1,8 +1,7 @@
-"""Linux desktop integration: launcher entry, icon, and the URL scheme handler.
+"""Desktop entry, icon and the native-access:// scheme handler.
 
-Native Access's browser-based login redirects to native-access://, for that
-to reach the app running under Wine, an x-scheme-handler must be registered
-on the Linux side (winemenubuilder is disabled, so Wine never does it).
+The browser login redirects to native-access://, so an x-scheme-handler has
+to be registered on the Linux side (winemenubuilder is disabled, Wine won't).
 """
 
 from __future__ import annotations
@@ -39,10 +38,8 @@ def current_scheme_handler() -> str | None:
 
 
 def _mimeapps_files() -> list[Path]:
-    """User-writable mimeapps.list files, highest precedence first.
-
-    xdg-mime writes the first; the second is the location older xdg-utils
-    used and where another tool's default may still be sitting.
+    """User mimeapps.list files, highest precedence first (the second is the old xdg-utils
+    location).
     """
     return [
         config.config_home() / "mimeapps.list",
@@ -51,7 +48,6 @@ def _mimeapps_files() -> list[Path]:
 
 
 def _recorded_default(path: Path) -> str | None:
-    """The scheme's default in one mimeapps.list, or None."""
     try:
         lines = path.read_text().splitlines()
     except OSError:
@@ -64,21 +60,16 @@ def _recorded_default(path: Path) -> str | None:
         elif in_defaults and "=" in line:
             key, _, value = line.partition("=")
             if key.strip() == _SCHEME_MIME:
-                # A ;-separated preference list; the first entry wins.
+                # ;-separated list, first entry wins
                 entries = [v.strip() for v in value.split(";") if v.strip()]
                 return entries[0] if entries else None
     return None
 
 
 def recorded_scheme_handler() -> tuple[Path, str] | None:
-    """The scheme's default as literally recorded, or None.
-
-    `xdg-mime query` resolves through mimeinfo.cache and quietly falls back
-    to some other association when the recorded default does not resolve -
-    a desktop-file id containing spaces. That makes the query an
-    unreliable answer to "who owns this scheme": it can report us while a
-    foreign entry is still what is written down, ready to win again the
-    next time the cache is rebuilt. The recorded value is the durable one.
+    """What mimeapps.list says, not what `xdg-mime query` says: the query goes through
+    mimeinfo.cache and falls back to another association, so it can report us while a foreign
+    entry is still written down and wins after the next cache rebuild.
     """
     for path in _mimeapps_files():
         value = _recorded_default(path)
@@ -97,13 +88,9 @@ def scheme_handler_owner() -> tuple[str, str] | None:
 
 
 def _launcher_exec() -> str:
-    """The `native-access` the desktop entry should run.
-
-    A system install stays a bare name (any PATH finds it, and the entry
-    keeps working across package upgrades). Anything under $HOME or in a
-    Nix store path gets its absolute path: the desktop portal's PATH does
-    not include pipx's ~/.local/bin, and a checkout or `nix shell` build
-    must not be silently replaced by an older `ni` on PATH.
+    """Exec for the desktop entry: bare `native-access` for a system install, absolute path for
+    anything under $HOME or in the Nix store (the portal's PATH lacks ~/.local/bin, and a
+    checkout must not be shadowed by an older ni).
     """
     running = Path(sys.argv[0]).resolve()
     if running.name in ("ni", "native-access"):
@@ -124,9 +111,6 @@ def _launcher_exec() -> str:
 
 
 def _system_entry_current() -> bool:
-    """A system-wide copy of our .desktop file with the exact current
-    content exists. Every package channel installs the data file verbatim,
-    so byte-equality means "same version, all wiring present"."""
     data_dirs = os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share")
     packaged = _packaged("native-access.desktop")
     home = config.data_home()
@@ -147,17 +131,9 @@ def _user_icon() -> Path:
 
 
 def install_user_desktop_files(prefix: Path, *, quiet: bool = False) -> None:
-    """Install our .desktop file and icon into the user's XDG data dir -
-    but only when they add something over the packaged system entry.
-
-    The user copy exists for three reasons: a launcher outside the portal
-    PATH (pipx, nix shell), a non-default prefix that must be baked into
-    Exec (the browser login callback runs without our environment), or a
-    stale/absent system entry. When none apply, the copy would only
-    shadow the packaged entry and linger after the package is removed -
-    so it is deleted instead.
-
-    Idempotent and cheap: nothing is rewritten when already up to date.
+    """User copy of the .desktop file and icon, only when the packaged entry can't serve: launcher
+    outside the portal PATH, non-default prefix baked into Exec, stale or missing system entry.
+    Otherwise the copy is removed so it doesn't shadow the package.
     """
     apps = config.data_home() / "applications"
     target = apps / config.DESKTOP_FILE_NAME
@@ -184,11 +160,9 @@ def install_user_desktop_files(prefix: Path, *, quiet: bool = False) -> None:
     content = _packaged("native-access.desktop")
     exec_line = f'Exec=env NI_WINE_GUI=1 {launcher} --prefix "{prefix}" %u'
     content = content.replace("Exec=env NI_WINE_GUI=1 native-access %u", exec_line)
-    # TryExec hides the entry from menus while the launcher is missing
-    # (e.g. after the package is removed but this user copy lingers).
+    # TryExec hides the entry while the launcher is missing (package removed)
     content = content.replace("TryExec=native-access", f"TryExec={launcher}")
-    # Entry and icon are checked apart: a release can change just one of
-    # them, and a missing icon must be restored even when the entry is current.
+    # entry and icon checked separately, a release can change just one of them
     icon = _user_icon()
     svg = _packaged("native-access.svg")
     if not (icon.is_file() and icon.read_text() == svg):
@@ -205,19 +179,8 @@ def install_user_desktop_files(prefix: Path, *, quiet: bool = False) -> None:
 
 
 def ensure_url_handler(prefix: Path, *, quiet: bool = False) -> bool:
-    """Make sure native-access:// URLs are routed to us. Returns success.
-
-    Maintains a user-local copy of the .desktop file only when the
-    packaged system entry doesn't cover us (see
-    install_user_desktop_files); both live under the same desktop-file
-    ID, so the scheme handler resolves either way.
-
-    Takes the scheme over from a foreign owner rather than leaving it be.
-    Another Wine manager that once ran Native Access claims it too -
-    Bottles writes "<bottle>--<program>--<timestamp>.desktop", and its
-    entry sends the browser login callback into *that* tool's prefix,
-    where Native Access has no NTK daemon and stalls on "Please grant
-    permission to Native Access to install dependencies".
+    """Route native-access:// to us, taking the scheme over from a foreign owner (Bottles leaves its
+    entry as default and the login callback lands in that prefix, #5). Returns success.
     """
     install_user_desktop_files(prefix, quiet=quiet)
 
@@ -229,7 +192,7 @@ def ensure_url_handler(prefix: Path, *, quiet: bool = False) -> bool:
     if result is None:
         if not quiet:
             warn(
-                "xdg-mime not found, cannot register the login URL handler; "
+                "xdg-mime not found, cannot register the login URL handler, "
                 "browser login callbacks will not reach Native Access"
             )
         return False

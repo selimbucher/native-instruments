@@ -1,24 +1,23 @@
 """Make the prefix's products usable from a DAW that runs in its own prefix.
 
-A Windows DAW under Wine loads plugins into its
-own prefix. Pointing it at ~/.wine-ni over Z: finds the plugin files but
-not the products: an NI plugin decides activation from state that lives in
-the prefix it runs in, so Kontakt comes up as "Kontakt 8 Demo". That state:
+A Windows DAW under Wine loads plugins into its own prefix. Pointing it at
+~/.wine-ni over Z: finds the plugin files but not the products: NI plugins
+decide activation from state in the prefix they run in, so Kontakt comes
+up as "Kontakt 8 Demo". That state:
 
 - Common Files\\Native Instruments\\Service Center\\*.xml (which products
-  use RAS3 licensing), then installed_products\\*.json, then one signed
+  use RAS3 licensing), installed_products\\*.json, and one signed
   Native Access\\ras3\\<upid>.jwt per product
 - HKLM\\Software\\Native Instruments (install and content locations)
 - the JWT's hardware profile, which names the prefix's MachineGuid
 
-`link` gives the DAW's prefix all of it: symlinks at the same C:\\ paths
-(installs, plugins, libraries; nothing is copied), the vendors' registry
-keys, and this prefix's MachineGuid. To NI both prefixes are then the
-same machine, and Native Access in this prefix stays the one place that
-installs, updates and activates.
+`link` gives the DAW prefix all of it: symlinks at the same C:\\ paths
+(nothing is copied), the vendors' registry keys and this prefix's
+MachineGuid. To NI both prefixes are the same machine, and Native Access
+here stays the one place that installs, updates and activates.
 
-The DAW prefix's registry is edited as text while its Wine session is
-down, so no second Wine build ever boots it.
+The DAW prefix's registry is edited as text while its Wine is down, so no
+second Wine build ever boots it.
 """
 
 from __future__ import annotations
@@ -33,19 +32,18 @@ from . import config
 from .util import die, info, warn
 from .wine import prefix_in_use, session_wine
 
-# Directory trees merged into the DAW prefix. Entries it lacks become
-# symlinks; directories both have (Common Files, VST3, ...) are merged into.
+# trees merged into the DAW prefix: entries it lacks become symlinks,
+# directories both have (Common Files, VST3, ...) are merged
 _ROOTS = ("Program Files", "Program Files (x86)", "ProgramData", "users/Public/Documents")
 _MAX_DEPTH = 4
-# Windows' and Wine's own directories, installer caches, IPC scratch space,
-# and ni-wine's PowerShell wrapper (Native Access's installers only).
+# Windows' and Wine's own dirs, installer caches, IPC scratch and our PowerShell
 _SKIP = re.compile(
     r"microsoft.*|windows.*|internet explorer|system|package cache|boost_interprocess"
     r"|temp|powershell|\{[0-9a-f-]{36}\}",
     re.IGNORECASE,
 )
-# Folders every vendor installs into: always real directories in the DAW
-# prefix, so that what gets installed there later stays there.
+# folders every vendor installs into stay real directories in the DAW
+# prefix, so later installs there don't land in ~/.wine-ni
 _SHARED = {
     "common files",
     "vst2",
@@ -58,9 +56,8 @@ _SHARED = {
     "plug-ins",
 }
 
-# Registry subtrees, spelled as in Wine's .reg files (keys relative to HKLM
-# in system.reg, to HKCU in user.reg). Native Access also installs iZotope
-# and Plugin Alliance products.
+# registry subtrees as spelled in Wine's .reg files (relative to HKLM in
+# system.reg, HKCU in user.reg). NA also installs iZotope and Plugin Alliance.
 _VENDORS = ("Native Instruments", "iZotope", "iZotope, Inc.", "Plugin Alliance")
 _MACHINE_KEYS = tuple(rf"Software\\{v}" for v in _VENDORS) + tuple(
     rf"Software\\Wow6432Node\\{v}" for v in _VENDORS
@@ -115,7 +112,7 @@ def _present(sections: list[tuple[str, str]], subtree: str) -> bool:
 
 
 def _merge(src: str, dst: str, subtrees: list[str]) -> str:
-    """*dst* with its *subtrees* replaced by *src*'s."""
+    """dst with the given subtrees replaced by src's."""
     _, src_sections = _split(src)
     preamble, dst_sections = _split(dst)
     kept = [s for s in dst_sections if not any(_under(s[0], t) for t in subtrees)]
@@ -155,7 +152,7 @@ def _set_machine_guid(system_reg: str, guid: str) -> str:
 
 
 def _link_tree(src: Path, dst: Path, depth: int, made: list[Path]) -> None:
-    # Wine resolves paths case-insensitively; so must the merge.
+    # Wine resolves paths case-insensitively, so must the merge
     existing = {entry.name.lower(): entry for entry in dst.iterdir()}
     for entry in sorted(src.iterdir()):
         if _SKIP.fullmatch(entry.name):
@@ -179,7 +176,7 @@ def _link_tree(src: Path, dst: Path, depth: int, made: list[Path]) -> None:
 
 
 def _our_links(target_c: Path, source_c: Path):
-    """Symlinks in *target_c*'s merged roots that point into *source_c*."""
+    """Symlinks in target_c's merged roots that point into source_c."""
     for root in _ROOTS:
         yield from _links_below(target_c / root, source_c, 1)
 
@@ -240,7 +237,6 @@ def _check_prefixes(prefix: Path, target: Path) -> None:
 
 
 def sync(prefix: Path, target: Path, *, first: bool = False) -> None:
-    """Bring *target* up to date with *prefix*'s products (idempotent)."""
     source_c = config.drive_c(prefix).resolve()
     target_c = config.drive_c(target)
 
@@ -269,8 +265,7 @@ def sync(prefix: Path, target: Path, *, first: bool = False) -> None:
         die(f"{prefix} has no MachineGuid, is it a Wine prefix?")
 
     if first:
-        # Kept for `unlink`: the DAW prefix's own MachineGuid, and which
-        # vendor keys it did not have before.
+        # kept for `unlink`: the DAW prefix's own MachineGuid and which vendor keys it lacked
         for name in ("system.reg", "user.reg"):
             backup = target / f"{name}.before-ni-link"
             if not backup.exists():
@@ -285,8 +280,8 @@ def sync(prefix: Path, target: Path, *, first: bool = False) -> None:
             entry["user_keys"] = [k for k in _USER_KEYS if not _present(dst_user_sections, k)]
         _save_state(state)
 
-    # HKLM follows the Native Access prefix on every sync. HKCU holds the
-    # user's settings, which the DAW prefix keeps once it has them.
+    # HKLM follows the NA prefix on every sync, HKCU holds user settings
+    # which the DAW prefix keeps once it has them
     machine = [k for k in _MACHINE_KEYS if _present(src_system_sections, k)]
     user = [
         k
@@ -339,7 +334,7 @@ def run_unlink(prefix: Path, target: Path) -> None:
     if not (target / "system.reg").is_file():
         del links[str(target.resolve())]
         _save_state(state)
-        info(f"{target} no longer exists; forgot it")
+        info(f"{target} no longer exists, forgot it")
         return
     if _busy(target):
         die(f"{target} is in use, close the DAW (and anything else running in it) first")
@@ -364,12 +359,11 @@ def run_unlink(prefix: Path, target: Path) -> None:
 
 
 def sync_all(prefix: Path) -> None:
-    """Re-sync every linked prefix; called after Native Access closes."""
+    """Re-sync every linked prefix, called after Native Access closes."""
     targets = linked_prefixes(prefix)
     if not targets:
         return
-    # wineserver writes the registry to disk every 30 s; what the daemon
-    # recorded for a fresh install may not be in system.reg yet.
+    # wineserver flushes the registry every 30 s, a fresh install may not be in system.reg yet
     info("updating linked prefixes...")
     time.sleep(31)
     for target in targets:

@@ -1,5 +1,3 @@
-"""Paths and constants shared across commands."""
-
 from __future__ import annotations
 
 import os
@@ -8,18 +6,16 @@ from pathlib import Path
 APP_NAME = "ni-wine"
 
 # The download button on native-instruments.com/pages/native-access. The old
-# fileadmin/downloads URL now redirects to that HTML page (site moved to
-# Shopify, Sept 2026), so setup verifies it really got a Windows executable.
-# storage.googleapis.com/ni-assets, the button's previous target, now denies
-# access (Oct 2026).
+# fileadmin URL redirects to an HTML page since the Shopify move (Sept 2026),
+# storage.googleapis.com/ni-assets denies access since Oct 2026. Setup checks
+# that it really got an exe.
 NA_INSTALLER_URL = "https://assets.native-instruments.com/downloads/Native-Access_2.exe"
 VCREDIST_URL = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
 
 # The URL scheme Native Access registers for its browser-login callback.
 URL_SCHEME = "native-access"
 
-# The .desktop file id, also its icon's name. Our dialogs take it as their
-# window id, so a taskbar resolves them to that entry (see ui.py).
+# .desktop file id and icon name, also the window class of our dialogs (ui.py)
 APP_ID = "native-access"
 DESKTOP_FILE_NAME = f"{APP_ID}.desktop"
 
@@ -68,7 +64,6 @@ def ntk_installer_dir(prefix: Path) -> Path:
 
 
 def wine_user(prefix: Path) -> str:
-    """The Windows user name inside the prefix."""
     users = drive_c(prefix) / "users"
     if users.is_dir():
         for entry in sorted(users.iterdir()):
@@ -78,7 +73,6 @@ def wine_user(prefix: Path) -> str:
 
 
 def na_roaming_dir(prefix: Path) -> Path:
-    """Native Access's Electron app-data directory (window state, prefs)."""
     return (
         drive_c(prefix)
         / "users"
@@ -88,7 +82,6 @@ def na_roaming_dir(prefix: Path) -> Path:
 
 
 def updater_dir(prefix: Path) -> Path:
-    """electron-updater's download cache for Native Access self-updates."""
     return drive_c(prefix) / "users" / wine_user(prefix) / "AppData/Local/nativeaccess2-updater"
 
 

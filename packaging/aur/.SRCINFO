@@ -1,5 +1,5 @@
 pkgbase = ni-wine
-	pkgdesc = Native Instruments software under Wine, setup, launch, and product management
+	pkgdesc = Native Instruments software under Wine: setup, launch and product management
 	pkgver = 2.4.3
 	pkgrel = 1
 	url = https://github.com/selimbucher/native-instruments

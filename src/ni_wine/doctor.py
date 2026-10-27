@@ -1,14 +1,8 @@
-"""Diagnose (and optionally repair) the ni-wine environment.
+"""`ni doctor`: diagnose and optionally repair the environment.
 
-Covers the failure modes users actually hit:
-- missing runtime dependencies
-- prefix not set up / Native Access missing
-- tray-icon window tweak not applied
-- native-access:// login callback not routed (no x-scheme-handler)
-- browser login prompts (optionally pre-authorize the NI origins)
-- leftover Native Access self-update downloads (~370 MB)
-- NTK daemon missing / not registered / not running (the cause of Native
-  Access hanging on "Please grant permission … to install dependencies")
+Dependencies, prefix state, tray tweak, URL handler, browser login prompts,
+update leftovers and the NTK daemon (the cause of NA hanging on "Please
+grant permission to Native Access to install dependencies").
 """
 
 from __future__ import annotations
@@ -34,12 +28,11 @@ from .wine import (
     wine_version_problem,
 )
 
-# Chromium persists "Always allow <origin> to open <scheme> links" per
-# origin+scheme in the profile's Preferences JSON. A deny is never stored
-# (removed from Chromium in 2020), so the only useful repair is seeding the
-# allow for NI's login origins; then the login callback opens without any
-# prompt. Linux Chromium does not tamper-protect this key; the only rule is
-# to edit while the browser is closed (it rewrites Preferences every ~10 s).
+# Chromium stores "Always allow <origin> to open <scheme> links" per origin
+# and scheme in the profile's Preferences JSON. A deny is never stored
+# (removed in 2020), so seeding the allow for NI's login origins makes the
+# callback open without a prompt. The key is not tamper-protected on Linux,
+# just edit it while the browser is closed (it rewrites Preferences every ~10 s).
 _NI_LOGIN_ORIGINS = (
     "https://www.native-instruments.com",
     "https://auth.native-instruments.com",
@@ -65,7 +58,7 @@ class Check:
         mark = "ok" if self.ok else ("!!" if self.required else "--")
         line = f"  [{mark}] {self.label}"
         if self.detail:
-            line += f", {self.detail}"
+            line += f": {self.detail}"
         return line
 
 
@@ -104,14 +97,14 @@ def _dependency_checks(prefix: Path) -> list[Check]:
         else:
             severity, message = problem
             wine_ok = severity != "error"
-            wine_detail = f"{wine}, {message}"
+            wine_detail = f"{wine}: {message}"
     checks = [Check("wine", wine_ok, wine_detail)]
     winetricks = which_first("winetricks")
     wt_detail = winetricks or (
         "not found (installs vcrun2022/powershell during setup, Debian: enable contrib)"
     )
     if winetricks and (version := _cmd_version(winetricks)):
-        # "20260125 - sha256sum: ...", only the release date matters
+        # "20260125 - sha256sum: ...", only the date matters
         wt_detail = f"{winetricks} ({version.split(' ')[0]})"
     checks.append(Check("winetricks", bool(winetricks), wt_detail))
     for label, names, required, purpose in deps:
@@ -159,7 +152,7 @@ def _prefix_checks(prefix: Path) -> list[Check]:
                 recorded
                 if matches
                 else f"{recorded}, but current Wine is {current}, "
-                "the prefix is migrated automatically on next launch",
+                "the prefix is migrated on next launch",
                 required=False,
             )
         )
@@ -206,7 +199,7 @@ def _prefix_checks(prefix: Path) -> list[Check]:
             ""
             if not others
             else "; ".join(f"pid {pid} serves {other}" for pid, other in others)
-            + ", Native Access would use that prefix's login; stop it first",
+            + ", Native Access would use that prefix's login, stop it first",
         )
     )
     is_running = daemon.running(prefix)
@@ -262,7 +255,7 @@ def _prefix_checks(prefix: Path) -> list[Check]:
             ""
             if hook_ok
             else f"{msishim.describe(prefix)}, Native Access cannot install "
-            "Kontakt without it; armed by `native-access` or `ni doctor --fix`",
+            "Kontakt without it, armed by `native-access` or `ni doctor --fix`",
             required=False,
         )
     )
@@ -302,12 +295,9 @@ def _prefix_checks(prefix: Path) -> list[Check]:
 
 
 def _elevation_check(prefix: Path) -> Check:
-    """Does Native Access's own daemon-reinstall path work here?
-
-    Informational: ni-wine keeps the daemon running so NA never needs it,
-    but knowing it is broken explains the 'grant permission' screen when
-    Native Access is started some other way.
-    """
+    """Does NA's own daemon reinstall work here? Informational, ni-wine keeps
+    the daemon running so NA never needs it, but it explains the 'grant
+    permission' screen when NA is started some other way."""
     label = "Native Access's own daemon installer (PowerShell elevation) works"
     if not config.na_exe(prefix).is_file():
         return Check(label, True, "skipped, Native Access not installed", required=False)
@@ -320,7 +310,7 @@ def _elevation_check(prefix: Path) -> Check:
         ""
         if outcome
         else "broken, harmless while ni-wine starts the daemon before "
-        "Native Access; `ni doctor --fix` installs the PowerShell profile",
+        "Native Access, `ni doctor --fix` installs the PowerShell profile",
         required=False,
     )
 
@@ -341,10 +331,10 @@ def _handler_check() -> Check:
     return Check(
         label,
         False,
-        f"{handler} owns it (set in {source}), that is another tool's "
-        "launcher, so the browser login callback opens Native Access in its "
-        "Wine prefix, where there is no NTK daemon and it hangs on 'grant "
-        "permission'; run `ni doctor --fix`",
+        f"{handler} owns it (set in {source}), another tool's launcher. The "
+        "browser login callback would open Native Access in that Wine prefix, "
+        "where there is no NTK daemon and it hangs on 'grant permission', "
+        "run `ni doctor --fix`",
     )
 
 
@@ -483,7 +473,7 @@ def run_doctor(prefix: Path, *, fix: bool = False) -> int:
         if config.drive_c(prefix).is_dir():
             wine = Wine(prefix)
             if apply_prefix_tweaks(wine) and not prefix_in_use(prefix):
-                # explorer.exe reads the tray settings only at startup.
+                # explorer.exe reads the tray settings at startup only
                 wine.kill_server()
             clear_updater_residue(prefix)
             powershell.install_profile(prefix)
@@ -518,7 +508,7 @@ def run_doctor(prefix: Path, *, fix: bool = False) -> int:
     if failures:
         print(
             f"\n{len(failures)} problem(s) found."
-            + ("" if fix else "  Some are fixable with `ni doctor --fix`.")
+            + ("" if fix else " Some are fixable with `ni doctor --fix`.")
         )
         return 1
     print("\nAll good.")

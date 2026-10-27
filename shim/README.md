@@ -36,11 +36,11 @@ just connects that to the moment the installer would have run the MSI.
 The C is about 250 lines with no CRT, no network, no crypto. Imports are
 `kernel32` and `user32` (for `wsprintfA` in the log line).
 
-## Verify it yourself
+## Verifying
 
 Build it (any 32-bit mingw-w64 toolchain):
 
-    make            # → msi_shim32.dll
+    make            # builds msi_shim32.dll
 
 Look at what came out:
 

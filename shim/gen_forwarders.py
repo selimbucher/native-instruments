@@ -8,9 +8,8 @@ msi.spec) and writes:
   stubs32.S   one 5-instruction thunk per export: `jmp *g_real[i]`
   msi.def     the export list with the original ordinals
 
-Only MsiInstallProductA/W get real code (in msi_shim.c); everything else is
-a plain jump into Wine's own msi. Run this file to see exactly what the
-shim exports, nothing is hand-written per function.
+Only MsiInstallProductA/W have real code (msi_shim.c), everything else is
+a plain jump into Wine's own msi.
 """
 
 from __future__ import annotations

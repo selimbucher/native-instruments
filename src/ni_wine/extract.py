@@ -1,14 +1,13 @@
-"""Lay out Kontakt 8's files from its installer payload into a drive_c tree.
+"""Lay out Kontakt 8's files from its installer payload into drive_c.
 
 NI's InstallAware installer carries an MSI plus an OFFLINE payload tree of
 hex-named directories. The MSI's Directory/Component/File tables say where
-each payload file belongs on C:. We replay that mapping ourselves since
-Wine's MSI engine hangs on the package (shim/msi_shim.c).
+each payload file belongs on C:. We replay that mapping since Wine's MSI
+engine hangs on the package (shim/msi_shim.c).
 
-`plan_installer_dir(msi)` plans from the payload the installer has unpacked
-itself (the msi shim calls back into ni-wine at that point) and returns a
-`Plan`; nothing in the prefix changes until `Plan.execute`, so the old
-install is removed only once the new one is verified.
+plan_installer_dir(msi) plans from the payload the installer has unpacked
+(the msi shim calls back into ni-wine at that point) and returns a Plan,
+nothing in the prefix changes until Plan.execute.
 """
 
 from __future__ import annotations
@@ -103,12 +102,8 @@ def _offline_in(root: Path) -> Path | None:
 
 
 def _find_offline(msi: Path) -> Path | None:
-    """The OFFLINE payload tree belonging to an installer's *msi*.
-
-    A 7z-unpacked installer keeps the MSI and OFFLINE together. InstallAware
-    itself puts the MSI in `%TEMP%\\mia1\\` and the payload in a sibling
-    `%TEMP%\\mia<hex>.tmp\\` directory, so the siblings are searched too,
-    newest first.
+    r"""The OFFLINE payload tree for an msi: next to it after 7z, or in a sibling
+    %TEMP%\mia<hex>.tmp when InstallAware unpacked it (newest first).
     """
     found = _offline_in(msi.parent)
     if found is not None:
@@ -126,11 +121,10 @@ KONTAKT8_INSTALL_DIR = "C:\\Program Files\\Native Instruments\\Kontakt 8\\"
 KONTAKT8_CONTENT_DIR = "C:\\Program Files\\Common Files\\Native Instruments\\Kontakt 8\\"
 KONTAKT8_VST3_DIR = "C:\\Program Files\\Common Files\\VST3\\"
 
-# What the MSI's Registry table writes for the product (the rows under
-# HKLM\Software\Native Instruments\Kontakt 8; the daemon's
-# evaluateInstallationState wants InstallDir/ContentDir there, and its
-# "roll forward" of the install state reads the rest). The MSI also
-# writes InstallAAX64Dir, which no plugin host on Linux uses.
+# What the MSI's Registry table writes under HKLM\Software\Native Instruments\Kontakt 8.
+# The daemon's evaluateInstallationState wants InstallDir/ContentDir, its
+# install state roll forward reads the rest. InstallAAX64Dir is left out,
+# no plugin host on Linux uses it.
 KONTAKT8_REGISTRY = (
     ("InstallDir", KONTAKT8_INSTALL_DIR),
     ("ContentDir", KONTAKT8_CONTENT_DIR),
@@ -140,8 +134,7 @@ KONTAKT8_REGISTRY = (
 
 
 def write_product_record(out_dir: Path) -> None:
-    """The install record the MSI's InstallAware wrapper writes; the daemon
-    reads it alongside the registry values (kontakt.py)."""
+    """The install record the InstallAware wrapper writes, read by the daemon."""
     json_dir = out_dir / "users/Public/Documents/Native Instruments/installed_products"
     json_dir.mkdir(parents=True, exist_ok=True)
     (json_dir / "Kontakt 8.json").write_text(
@@ -156,8 +149,6 @@ def write_product_record(out_dir: Path) -> None:
 
 
 class Plan:
-    """Everything needed to lay a payload out, computed before touching the prefix."""
-
     def __init__(self, copy_list: list[tuple[Path, str]], offline: Path) -> None:
         self.copy_list = copy_list
         self.offline = offline
@@ -169,8 +160,7 @@ class Plan:
             dest = out_dir / dest_dir / src.name
             dest.parent.mkdir(parents=True, exist_ok=True)
             if not dest.exists() or update:
-                # Copy then rename, never write into the existing file: a
-                # plugin host that has the old one mapped keeps its inode.
+                # copy then rename, a plugin host that has the old file mapped keeps its inode
                 tmp = dest.with_name(dest.name + ".ni-wine-tmp")
                 shutil.copy2(src, tmp)
                 os.replace(tmp, dest)
@@ -187,7 +177,6 @@ class Plan:
 
 
 def _plan(msi: Path, offline: Path, idt_dir: Path) -> Plan:
-    """Work out where every payload file goes from the MSI's tables."""
     _dump_msi_tables(msi, idt_dir)
 
     # --- Directory table: key -> (parent, long name) -----------------------
@@ -205,7 +194,6 @@ def _plan(msi: Path, offline: Path, idt_dir: Path) -> Plan:
         longname_map[key] = longname
 
     def path_segments(key: str) -> list[str]:
-        """Walk up to the product root, collecting meaningful segments."""
         parts: list[str] = []
         current = key
         visited: set[str] = set()
@@ -291,8 +279,8 @@ def _plan(msi: Path, offline: Path, idt_dir: Path) -> Plan:
 
 
 def _setup_exe_near(msi: Path) -> Path | None:
-    """The downloaded setup exe the daemon unpacked *msi* from, if still around
-    (`%TEMP%\\<Product>_Installer\\<name> Setup PC.exe`)."""
+    """The setup exe the daemon unpacked msi from, if still around
+    (%TEMP%\\<Product>_Installer\\<name> Setup PC.exe)."""
     temp = msi.parent.parent
     candidates = [
         exe
@@ -304,11 +292,8 @@ def _setup_exe_near(msi: Path) -> Path | None:
 
 
 def _pristine_msi(setup_exe: Path) -> Path | None:
-    """Pull the untouched MSI out of the setup exe (a 7z-readable SFX).
-
-    The MSI InstallAware hands to MsiInstallProduct has been rewritten by
-    its runtime and msitools cannot read it; the original still describes
-    the same file layout. Cached per setup exe.
+    """The untouched MSI from inside the setup exe (a 7z-readable SFX). InstallAware rewrites the
+    one it hands to MsiInstallProduct and msitools can't read that. Cached per setup exe.
     """
     seven_zip = which_first("7z", "7zz", "7za")
     if not seven_zip:
@@ -332,12 +317,8 @@ def _pristine_msi(setup_exe: Path) -> Path | None:
 
 
 def plan_installer_dir(msi: Path) -> Plan:
-    """Plan the layout of a payload the InstallAware installer already unpacked.
-
-    *msi* is the package the installer passed to MsiInstallProduct; the
-    OFFLINE tree is in a sibling temp directory. The tables are read from
-    the pristine MSI inside the setup exe when it is available (see
-    `_pristine_msi`), otherwise from *msi* itself.
+    """Plan the layout of a payload the installer already unpacked. Tables come from the pristine
+    MSI in the setup exe when available, otherwise from msi.
     """
     msi = msi.resolve()
     if not msi.is_file():

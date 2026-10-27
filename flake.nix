@@ -1,5 +1,5 @@
 {
-  description = "Native Instruments software under Wine, Nix packaging for the ni-wine CLI";
+  description = "Native Instruments software under Wine on Linux";
 
   inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
 
@@ -7,17 +7,14 @@
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
-      # NOT wineWow64Packages.yabridge (9.21): current Native Access's
-      # Electron hits a deterministic CHECK crash (0x80000003, no window)
-      # under it, verified on fresh prefixes, 2026-09. Two Wine builds
-      # cannot share a live prefix session ("wine client error: version
-      # mismatch"), so for DAW cohabitation override *yabridge's* wine up
-      # to this build (its package takes a `wine` argument) instead of
-      # pinning ni-wine down.
+      # not wineWow64Packages.yabridge (9.21): Native Access's Electron hits
+      # a CHECK crash (0x80000003, no window) under it, verified 2026-09.
+      # Two Wine builds can't share a prefix session ("version mismatch"),
+      # so override yabridge's wine up to this one (overlays.yabridge below).
       wine = pkgs.wineWow64Packages.staging;
       version = "2.4.3";
 
-      # Tools ni-wine executes at runtime.
+      # tools ni-wine runs
       runtimePath = pkgs.lib.makeBinPath [
         wine
         pkgs.winetricks
@@ -31,8 +28,7 @@
         pkgs.desktop-file-utils
       ];
 
-      # The forwarding msi.dll for the Kontakt installer (see shim/README.md),
-      # cross-compiled from source with the 32-bit mingw-w64 toolchain.
+      # the forwarding msi.dll for the Kontakt installer (shim/README.md)
       msi-shim = pkgs.pkgsCross.mingw32.stdenv.mkDerivation {
         pname = "ni-wine-msi-shim";
         inherit version;

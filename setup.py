@@ -1,6 +1,6 @@
-"""Build hook: compile the msi shim into the package (pip/pipx installs need a
-32-bit mingw compiler). Distribution packages (flake,
-PKGBUILD) build it explicitly instead; see shim/README.md."""
+"""Build hook: compile the msi shim into the package (pip/pipx installs need
+a 32-bit mingw compiler). Distribution packages build it themselves, see
+shim/README.md."""
 
 from __future__ import annotations
 

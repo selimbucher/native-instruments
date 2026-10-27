@@ -1,9 +1,9 @@
-"""Replace Wine's msvcp140 stubs with the genuine Microsoft runtime DLLs.
+"""Replace Wine's msvcp140 stubs with the real Microsoft runtime DLLs.
 
-Wine's builtin msvcp140.dll is missing symbols Kontakt needs. We pull the
-real DLLs out of the official VC++ 2022 redistributable and force them via
-DLL overrides. vcruntime140 must come along: the native msvcp140 links
-against it at the PE level and rejects Wine's builtin stub.
+Wine's builtin msvcp140.dll lacks symbols Kontakt needs. Pull the real DLLs
+out of the VC++ 2022 redistributable and force them via DLL overrides.
+vcruntime140 has to come along, the native msvcp140 links against it at
+the PE level and rejects Wine's stub.
 """
 
 from __future__ import annotations

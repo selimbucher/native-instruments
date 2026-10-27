@@ -37,9 +37,7 @@ install path, and diagnostics for the common failure modes.
 %pyproject_buildrequires
 
 %build
-# The Kontakt-installer msi shim is cross-compiled at build time rather
-# than shipped as a binary; it must land in the package data before the
-# wheel is built, because the wheel snapshots it.
+# the msi shim has to be in the package data before the wheel is built
 make -C shim CC=i686-w64-mingw32-gcc
 cp shim/msi_shim32.dll src/ni_wine/data/msi_shim32.dll
 %pyproject_wheel

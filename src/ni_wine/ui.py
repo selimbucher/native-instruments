@@ -14,13 +14,6 @@ from .util import info, warn
 
 
 class Progress:
-    """Context manager that shows setup progress.
-
-    Usage:
-        with Progress(title="Native Instruments Setup", enabled=True) as ui:
-            ui.step("Initializing Wine prefix...", 5)
-    """
-
     def __init__(self, title: str, enabled: bool = True) -> None:
         self._title = title
         self._enabled = enabled and bool(
@@ -33,8 +26,7 @@ class Progress:
         if not self._enabled:
             return self
         if shutil.which("yad"):
-            # Follows the GTK theme, light or dark. The one override: GTK
-            # themes dim the bar's text, and that is where the step shows.
+            # GTK themes dim the progress bar text, which is where the step shows
             css = tempfile.NamedTemporaryFile("w", suffix=".css", delete=False, prefix="ni-wine-")
             css.write("progressbar text { color: @theme_fg_color; }\n")
             css.close()
@@ -45,14 +37,10 @@ class Progress:
                 f"--title={self._title}",
                 "--text=<b>Setting up Native Access</b>",
                 "--align=left",
-                # The label's minimum height is computed with it wrapped, and
-                # that minimum, not the one line drawn at 420px, sets the
-                # window height, leaving half the dialog empty.  40
-                # characters is wider than the heading and still fits.
+                # without this the label's minimum height is computed wrapped
+                # and the window ends up twice as tall as its content
                 "--text-width=40",
-                # Otherwise the window is "yad" to the compositor, and a
-                # taskbar shows the icon theme's yad icon (WhiteSur's is
-                # the GNOME foot) instead of Native Access's.
+                # window class, so taskbars show the Native Access icon, not yad's
                 f"--name={config.APP_ID}",
                 f"--class={config.APP_ID}",
                 f"--window-icon={config.APP_ID}",
@@ -87,8 +75,7 @@ class Progress:
         except OSError:
             self._proc = None
             return self
-        # A dialog that rejects an option dies at once; say so instead of
-        # silently reporting to nobody.
+        # a yad that rejects an option exits right away, notice that
         time.sleep(0.3)
         if self._proc.poll() is not None:
             err = (self._proc.stderr.read() if self._proc.stderr else "").strip()
@@ -106,10 +93,8 @@ class Progress:
                 self._proc.stdin.write(f"# {message}\n{percent}\n")
                 self._proc.stdin.flush()
             except (BrokenPipeError, OSError):
-                # Dialog gone (closed by the user, or yad/zenity exited):
-                # keep going on the console. Dropping the pipe explicitly
-                # keeps Python from re-flushing it at exit and printing a
-                # "Exception ignored ... BrokenPipeError" traceback.
+                # dialog gone (closed or crashed), continue on the console.
+                # Closing the pipe here avoids a BrokenPipeError traceback at exit.
                 self._forget_dialog()
 
     def _forget_dialog(self) -> None:

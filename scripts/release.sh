@@ -1,26 +1,21 @@
 #!/usr/bin/env bash
-# Cut a release: bump every version surface, commit, tag, pin the AUR
-# build to the tag, and push. Everything downstream is automatic:
-# COPR rebuilds via webhook, GitHub Actions publishes AUR and the PPA.
+# Cut a release: bump the version everywhere, commit, tag, pin the AUR
+# build to the tag and push. GitHub Actions then publishes AUR, PPA and COPR.
 #
 #   scripts/release.sh 2.3.1
 #
-# Nothing reaches origin until the last step, and any failure before it
-# rolls the repository back to where it started. A half-cut release --
-# the bump commit without its tag -- is worse than no release: the
-# next run stacks a second bump on top and duplicates every changelog
-# stanza.
+# Nothing is pushed until the last step, any failure before it rolls back
+# to the starting commit. A half-cut release (bump commit without the tag)
+# would make the next run stack a second bump and duplicate the changelogs.
 set -euo pipefail
 
 v=${1:?usage: scripts/release.sh <version>}
 [[ $v =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "not a version: $v" >&2; exit 1; }
 cd "$(git rev-parse --show-toplevel)"
 
-# --- Preflight: everything that can refuse, before anything is changed ---
-#
-# The editor is checked here rather than where it is used, halfway down:
-# on a machine without it (EDITOR unset and no vi -- not installed by
-# default on Arch) the release used to die after committing the bump.
+# --- preflight, before anything is changed ---
+# the editor is checked up front: without one (EDITOR unset, no vi on Arch)
+# the release used to die after committing the bump
 
 editor=${EDITOR:-vi}
 missing=()
@@ -35,8 +30,7 @@ if (( ${#missing[@]} )); then
     exit 1
 fi
 
-# The in-place edits below pass `sed -i` with no backup suffix and use \n
-# in replacements; BSD/macOS sed accepts neither.
+# sed -i without a suffix and \n in replacements, BSD sed does neither
 if ! sed --version >/dev/null 2>&1; then
     echo "GNU sed required" >&2; exit 1
 fi
@@ -53,10 +47,9 @@ fi
 if [ -n "$(git ls-remote --tags origin "refs/tags/v$v")" ]; then
     echo "tag v$v already exists on origin" >&2; exit 1
 fi
-# Ahead of origin/main is fine (those commits go out with the release);
-# behind or diverged means the bump would land on a stale tree.
+# ahead of origin/main is fine, behind or diverged is not
 if ! git merge-base --is-ancestor origin/main main; then
-    echo "main is behind or diverged from origin/main -- pull first" >&2; exit 1
+    echo "main is behind or diverged from origin/main, pull first" >&2; exit 1
 fi
 
 # --- Rollback -----------------------------------------------------------
@@ -70,7 +63,7 @@ cleanup() {
     trap - EXIT
     rm -f "$notes" || true
     if [ "$status" -ne 0 ]; then
-        echo "release failed -- rolling back to $(git rev-parse --short "$start")" >&2
+        echo "release failed, rolling back to $(git rev-parse --short "$start")" >&2
         if [ -n "$tagged" ]; then
             git tag -d "$tagged" >/dev/null 2>&1 || true
         fi
@@ -86,8 +79,7 @@ sed -i "s/^Version:.*/Version:        $v/" packaging/fedora/ni-wine.spec
 sed -i "/^%changelog/a * $(LC_ALL=C date '+%a %b %d %Y') Selim Bucher <me@selim.one> - $v-1\n- Release $v\n" \
     packaging/fedora/ni-wine.spec
 
-# Fresh changelog stanza for the base series; the PPA workflow rewrites
-# the series suffix per upload.
+# changelog stanza for the base series, the PPA workflow rewrites the suffix per series
 {
     printf 'ni-wine (%sppa1~noble1) noble; urgency=medium\n\n' "$v"
     printf '  * Release %s.\n\n' "$v"
@@ -98,10 +90,8 @@ mv debian/changelog.new debian/changelog
 
 git add -A
 git commit -m "chore: release $v"
-# Draft the release notes in the repo's established style (New features /
-# Fixes / Other with "component:" bullets) from the conventional commits
-# since the last tag, then open the editor for curation. The final text
-# is stored in the tag annotation and becomes the GitHub Release body.
+# draft the release notes from the conventional commits since the last tag
+# and open the editor. The tag annotation becomes the GitHub release body.
 prev=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
 range=${prev:+$prev..}HEAD
 section() {
@@ -109,9 +99,7 @@ section() {
     lines=$(git log --format='%s' "$range" \
         | grep -E "^$1[(:]" \
         | sed -E "s/^$1\(([^)]*)\): /\1: /; s/^$1: //; s/^/- /") || true
-    # An empty section must not fail the function: under `set -e` a bare
-    # `[ -n "$lines" ] && printf` returns 1 when the section is empty (e.g.
-    # a release with no feat: commits), which would abort the release.
+    # not `[ -n ] && printf`: under set -e an empty section would abort the release
     if [ -n "$lines" ]; then
         printf '**%s**\n\n%s\n\n' "$2" "$lines"
     fi
@@ -121,20 +109,17 @@ section() {
     section fix "Fixes"
     section chore "Other"
 } > "$notes"
-# Intentionally unquoted: EDITOR may carry arguments (e.g. "code -w").
+# unquoted, EDITOR may carry arguments (code -w)
 # shellcheck disable=SC2086
 $editor "$notes"
-# Quitting the editor without saving, or emptying the buffer, would
-# otherwise tag the release with a blank annotation and publish a GitHub
-# Release with no body.
+# an empty buffer would tag with a blank annotation and publish an empty release
 if ! grep -q '[^[:space:]]' "$notes"; then
-    echo "release notes are empty -- aborting" >&2; exit 1
+    echo "release notes are empty, aborting" >&2; exit 1
 fi
 git tag -a "v$v" -F "$notes"
 tagged="v$v"
 
-# The AUR build is pinned to the release commit (GitHub tarball checksums
-# are unstable, so the PKGBUILD fetches by commit with SKIP sums).
+# the AUR build is pinned to the release commit, GitHub tarball checksums are unstable
 h=$(git rev-parse "v$v^{commit}")
 sed -i "s/^pkgver=.*/pkgver=$v/; s/^pkgrel=.*/pkgrel=1/; s/^_commit=.*/_commit=$h/" \
     packaging/aur/PKGBUILD
@@ -143,12 +128,11 @@ sed -i "s/pkgver = .*/pkgver = $v/; s/pkgrel = .*/pkgrel = 1/; s|#commit=[0-9a-f
 git add packaging/aur
 git commit -m "chore: AUR files for $v"
 
-# --atomic: without it a partial push could leave the tag on origin while
-# main was rejected, and the rollback below would then undo local state
-# that origin already has.
+# --atomic: a partial push could leave the tag on origin while main was
+# rejected, and the rollback would undo state origin already has
 git push --atomic origin main "v$v"
 
-# Past the point of no return: nothing after this may roll back.
+# pushed, no rollback from here
 trap - EXIT
 rm -f "$notes"
-echo "released $v, COPR rebuilds via webhook; AUR + PPA publish via Actions"
+echo "released $v, Actions publishes AUR, PPA and COPR"

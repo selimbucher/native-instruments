@@ -1,15 +1,15 @@
 """Install PowerShell into the prefix and keep ni-wine's profile in it.
 
-This used to be winetricks' `powershell` verb (PowerShell 7 plus a
+This used to be the winetricks `powershell` verb (PowerShell 7 plus a
 powershell.exe wrapper), but Ubuntu 24.04 ships a winetricks from before
-the verb existed, and winetricks skips checksum enforcement in unattended
-mode. So ni-wine installs the same pieces itself: the pinned PowerShell 7
-MSI and the wrapper exes the verb would have used.
+the verb existed, and winetricks skips checksum checks in unattended mode.
+So ni-wine installs the same pieces itself: the pinned PowerShell 7 MSI and
+the wrapper exes.
 
 The wrapper's own profile.ps1 overrides Get-CimInstance and Start-Process
-in ways that break Native Access (see data/profile.ps1 for the details).
-ni-wine writes its own profile instead; the wrapper strips -NoProfile, so
-the replacement is in effect for every PowerShell call Native Access makes.
+in ways that break Native Access (see data/profile.ps1). ni-wine writes its
+own profile, and since the wrapper strips -NoProfile it applies to every
+PowerShell call NA makes.
 """
 
 from __future__ import annotations
@@ -58,7 +58,6 @@ def _fetch_msi() -> Path:
 
 
 def install_powershell(wine: Wine, display: str | None = None) -> None:
-    """Install PowerShell 7 and the powershell.exe wrapper into the prefix."""
     msi = _fetch_msi()
     result = wine.run(
         [
@@ -95,8 +94,7 @@ def install_powershell(wine: Wine, display: str | None = None) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(exe, target)
     wine.reg_add(r"HKCU\Software\Wine\DllOverrides", "powershell.exe", "native")
-    # msiexec can report success while installing nothing on a damaged
-    # prefix; make sure the interpreter is really there before moving on.
+    # msiexec can report success and install nothing on a damaged prefix
     if not pwsh_installed(wine.prefix):
         die(
             "the PowerShell installer reported success but pwsh.exe is "
@@ -124,10 +122,8 @@ def profile_current(prefix: Path) -> bool:
 
 
 def install_profile(prefix: Path) -> bool:
-    """Write ni-wine's profile.ps1 if it differs. Returns True if changed.
-
-    The winetricks original is kept once as profile.ps1.winetricks.
-    """
+    """Write ni-wine's profile.ps1 if it differs, True if changed. The winetricks
+    original is kept as profile.ps1.winetricks."""
     if not pwsh_installed(prefix) or profile_current(prefix):
         return False
     target = profile_path(prefix)

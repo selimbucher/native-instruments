@@ -15,8 +15,6 @@
 #    @vscode/sudo-prompt passes as  -FilePath "'C:\...\execute.bat'"  (the
 #    quotes reach the parameter literally) with "File not found", so Native
 #    Access's own daemon install fails with "Please grant permission ...".
-#
-# Everything below is deliberately minimal and Wine-specific.
 
 # Drop the stale ~/Documents/PowerShell/Modules entry Wine prefixes carry.
 $env:PSModulePath = (($env:PSModulePath -split ';' | Select-Object -Skip 1 | Sort-Object -Unique) -join ';')

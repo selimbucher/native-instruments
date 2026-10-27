@@ -1,5 +1,3 @@
-"""Wine invocation, hidden X displays, registry management, prefix tweaks."""
-
 from __future__ import annotations
 
 import contextlib
@@ -17,13 +15,9 @@ from .util import die, info, warn
 
 
 def session_wine(prefix: Path) -> str | None:
-    """The wine of the wineserver already running *prefix*, if there is one.
-
-    A prefix can only be used by one Wine build at a time; a second one
-    fails with "version mismatch". On NixOS the build that started the
-    session (yabridge's, from the DAW) is rarely the one on our PATH,
-    so follow the running server: its cwd is the prefix's server directory
-    and its binary sits next to the matching wine.
+    """Wine of the wineserver already running this prefix. Only one build can use a prefix at a
+    time, and on NixOS the one that started the session (yabridge's) is rarely the one on PATH.
+    The server's cwd is the server dir, its wine sits next to it.
     """
     try:
         st = os.stat(prefix)
@@ -88,14 +82,9 @@ def wine_build_id(wine: str) -> str | None:
 
 
 def wine_version_problem(build: str | None) -> tuple[str, str] | None:
-    """Classify a `wine --version` string against Native Access's needs.
-
-    The single source of truth for the version floor (verified 2026-09):
-    wine 8.0 cannot install the PowerShell MSI; Native Access itself
-    crashes deterministically on 9.x and commonly fails to get a GL
-    context on 10.x; 11.x works. Returns None if the build is fine, else
-    ("error", msg) for a build that will not work or ("warn", msg) for one
-    that may not. Both the setup/launch gate and `ni doctor` consume this.
+    """Check a `wine --version` string against what NA needs: 8.0 can't install the PowerShell MSI,
+    NA crashes on 9.x and mostly gets no GL context on 10.x, 11.x works (verified 2026-09).
+    Returns None, ("error", msg) or ("warn", msg).
     """
     if build is None:
         return ("warn", "could not determine the Wine version")
@@ -107,7 +96,7 @@ def wine_version_problem(build: str | None) -> tuple[str, str] | None:
         return (
             "warn",
             f"{build} has a known VC++ installer regression (WineHQ "
-            "bug 59632, fixed in 11.7), if setup fails at vcrun2022, "
+            "bug 59632, fixed in 11.7). If setup fails at vcrun2022, "
             "upgrade Wine",
         )
     if major < 10:
@@ -120,25 +109,23 @@ def wine_version_problem(build: str | None) -> tuple[str, str] | None:
     if major == 10:
         return (
             "warn",
-            f"{build}: Native Access often fails to start under Wine 10 "
-            "- Wine >= 11 is recommended",
+            f"{build}: Native Access often fails to start under Wine 10, Wine >= 11 is recommended",
         )
     return None
 
 
 def check_wine_version(wine: Wine) -> None:
-    """Refuse (or warn about) Wine builds Native Access cannot run on."""
+    """Die or warn on Wine builds Native Access can't run on."""
     problem = wine_version_problem(wine_build_id(wine.wine))
     if problem is None:
         return
     severity, message = problem
     running = session_wine(wine.prefix)
     if running and _same_binary(running, wine.wine):
-        # find_wine followed a session another app started (a DAW hosting
-        # plugins through yabridge), the fix is on that side.
+        # find_wine followed a session started by another app (yabridge from a DAW)
         message += (
-            "\nThis Wine was taken from the session already running the "
-            "prefix, upgrade the Wine of whatever started it (yabridge?), "
+            "\nThis Wine comes from the session already running the prefix. "
+            "Upgrade the Wine of whatever started it (yabridge?), "
             "or close that application first."
         )
     if severity == "error":
@@ -146,12 +133,10 @@ def check_wine_version(wine: Wine) -> None:
     warn(message)
 
 
-# Wine normally migrates a prefix when the Wine build changes, but it
-# detects the change by comparing file mtimes against .update-timestamp -
-# and on Nix every store file has mtime 1, so the check can never fire
-# there. Running an un-migrated prefix under a different build breaks
-# loudly (missing DLL forwards, respawning explorer.exe), so we track the
-# build ourselves and force the migration wineboot skips.
+# Wine migrates a prefix when the build changes, detected by comparing file
+# mtimes with .update-timestamp. On Nix every store file has mtime 1, so that
+# never fires, and an unmigrated prefix under a new build breaks (missing DLL
+# forwards, explorer.exe respawning). So track the build ourselves.
 _BUILD_MARKER = ".ni-wine-build"
 
 
@@ -162,11 +147,7 @@ def record_prefix_build(wine: Wine) -> None:
 
 
 def prefix_booted_by_ni_wine(prefix: Path) -> bool:
-    """True once ni-wine has run wineboot in *prefix* (marker written).
-
-    Lets setup tell its own half-built prefix apart from an unrelated Wine
-    prefix a user may have pointed NI_WINE_PREFIX at.
-    """
+    """True once ni-wine ran wineboot here, tells our half-built prefix from a foreign one."""
     return (prefix / _BUILD_MARKER).exists()
 
 
@@ -185,25 +166,19 @@ def ensure_prefix_build(wine: Wine) -> None:
     if recorded == build:
         return
     if prefix_in_use(wine.prefix):
-        # A DAW (via yabridge) or Kontakt's Activate button may be holding
-        # this prefix; wineboot -u would reboot Wine underneath it. Skip -
-        # the running session's own Wine already matches what started it.
+        # a DAW (yabridge) or Kontakt may be using the prefix, don't reboot Wine under it
         return
     info(f"Wine build changed ({recorded or 'unknown'} -> {build}), updating the prefix...")
     wine.run(["wineboot", "-u"], display="")
-    # wineboot started this session without a display, and Wine fixes a
-    # session's screen when it starts: without one it is 1024x768, for every
-    # later window too, and the daemon keeps the session alive. Native
-    # Access then never paints past 1024x768. End it; the next process
-    # starts a fresh session on the real display.
+    # wineboot ran without a display and the screen size is fixed when the
+    # session starts (1024x768 without one). The daemon would keep that
+    # session alive and NA would never paint past 1024x768, so end it here.
     wine.kill_server()
     wine.wait_server()
     record_prefix_build(wine)
 
 
 class Wine:
-    """A wine installation bound to one prefix."""
-
     def __init__(self, prefix: Path) -> None:
         self.prefix = prefix
         self.wine = find_wine(prefix)
@@ -250,8 +225,8 @@ class Wine:
         args += ["/t", reg_type, "/d", data, "/f"]
 
         for attempt in (1, 2):
-            # No pipes: on a cold prefix the first wine call boots services
-            # that inherit our stdio and would hold a pipe open indefinitely.
+            # no pipes: on a cold prefix the first wine call starts services
+            # that inherit our stdio and would keep a pipe open forever
             with tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as err:
                 result = subprocess.run(
                     [self.wine, *args],
@@ -265,8 +240,7 @@ class Wine:
             if result.returncode == 0:
                 return True
             if attempt == 1 and kill_on_failure:
-                # A stale wineserver (e.g. from a previous wine version)
-                # makes every wine call fail; kick it and try once more.
+                # a stale wineserver from another wine version fails every call
                 self.kill_server()
                 time.sleep(1)
         tail = stderr.strip().splitlines()
@@ -277,7 +251,6 @@ class Wine:
         return False
 
     def reg_query(self, key: str, value: str) -> str | None:
-        """The data of *value* under *key*, or None (asks wineserver)."""
         with tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as out:
             result = subprocess.run(
                 [self.wine, "reg", "query", key, "/v", value],
@@ -316,7 +289,6 @@ class Wine:
         )
 
     def wait_server(self, timeout: float = 30) -> None:
-        """Block until wineserver has exited (all wine processes done)."""
         if not self.wineserver:
             time.sleep(2)
             return
@@ -344,11 +316,7 @@ class Wine:
 
 
 def prefix_in_use(prefix: Path) -> bool:
-    """Is any Wine process running inside *prefix* (NA, Kontakt, a daemon...)?
-
-    Judged by the working directory Wine gives its processes (inside the
-    prefix's drive_c), which stays valid when WINEPREFIX is unset or stale.
-    """
+    """Any Wine process with its cwd inside drive_c, works with WINEPREFIX unset or stale."""
     try:
         wanted = os.stat(prefix)
     except OSError:
@@ -369,10 +337,9 @@ def prefix_in_use(prefix: Path) -> bool:
 
 
 def foreign_prefix_users(prefix: Path) -> list[int]:
-    """PIDs of yabridge plugin hosts running inside *prefix*.
+    """PIDs of yabridge plugin hosts in the prefix.
 
-    A DAW's bridged plugins share the prefix's wineserver; killing that
-    server (kill_server, reinstall) takes them, and the DAW, down with it.
+    Killing the wineserver takes them and the DAW down.
     """
     result = subprocess.run(["pgrep", "-f", "yabridge-host"], capture_output=True, text=True)
     wanted = str(prefix.expanduser().resolve())
@@ -383,8 +350,7 @@ def foreign_prefix_users(prefix: Path) -> list[int]:
             stat = Path(f"/proc/{pid}/stat").read_text()
         except OSError:
             continue
-        # Hosts whose DAW is gone get re-parented to init/systemd; they are
-        # leftovers, not a live session.
+        # hosts whose DAW is gone got reparented to init, leftovers
         ppid = int(stat.rsplit(")", 1)[1].split()[1])
         if ppid <= 1:
             continue
@@ -398,12 +364,8 @@ def foreign_prefix_users(prefix: Path) -> list[int]:
 
 
 def _start_xvfb(xvfb: str, size: str) -> tuple[subprocess.Popen, str] | None:
-    """Try display numbers well above any real session's.
-
-    Deliberately NOT `-displayfd`: its free-display scan starts at :0 and can
-    unlink the socket of a live session display whose lock file is missing
-    (common with XWayland). An explicit high number plus an existence
-    pre-check never goes near the session display.
+    """Xvfb on a free display well above any session's. Not -displayfd, its scan starts at :0 and
+    can unlink a live session display's socket when the lock file is missing (XWayland).
     """
     for number in range(90, 111):
         if Path(f"/tmp/.X{number}-lock").exists() or Path(f"/tmp/.X11-unix/X{number}").exists():
@@ -416,7 +378,7 @@ def _start_xvfb(xvfb: str, size: str) -> tuple[subprocess.Popen, str] | None:
         socket_path = Path(f"/tmp/.X11-unix/X{number}")
         for _ in range(50):
             if proc.poll() is not None:
-                break  # lost a startup race with another server, next number
+                break  # lost a race with another server, next number
             if socket_path.exists():
                 return proc, f":{number}"
             time.sleep(0.1)
@@ -427,11 +389,7 @@ def _start_xvfb(xvfb: str, size: str) -> tuple[subprocess.Popen, str] | None:
 
 @contextlib.contextmanager
 def hidden_display(size: str = "1280x1024x24") -> Iterator[str | None]:
-    """Start a throwaway Xvfb server and yield its DISPLAY string.
-
-    Yields None (meaning: use the real display) when Xvfb is unavailable -
-    setup still works, the installer windows are just visible.
-    """
+    """Throwaway Xvfb display, or None (use the real one) when Xvfb is missing."""
     xvfb = shutil.which("Xvfb")
     if not xvfb:
         warn("Xvfb not found: installer windows will be visible")
@@ -457,12 +415,10 @@ def hidden_display(size: str = "1280x1024x24") -> Iterator[str | None]:
 
 # --- Prefix tweaks ---------------------------------------------------------
 
-# Wine shows tray icons in a floating standalone window on desktops without
-# an XEmbed tray (Hyprland & other Wayland compositors). The window comes
-# from explorer.exe; modern Wine (9.0.1/9.2+) turns it off via the Explorer
-# key as a DWORD, Wine <= 8.21 used a string under X11 Driver (kept for old
-# distro wines, ignored by new ones), and NoTrayItemsDisplay (Wine >= 9.22)
-# additionally suppresses icons from XEmbed docking.
+# Without an XEmbed tray (Hyprland and other Wayland compositors) Wine shows
+# tray icons in a floating explorer.exe window. Wine >= 9.2 turns that off
+# with the Explorer DWORD, <= 8.21 with the X11 Driver string (kept for old
+# distro wines), NoTrayItemsDisplay (>= 9.22) also stops XEmbed docking.
 _TWEAKS: list[tuple[str, str, str, str, str]] = [
     # (marker in user.reg, key, value name, data, type)
     (
@@ -499,11 +455,8 @@ TRAY_DISABLED_MARKER = '"ShowSystray"=dword:00000000'
 
 
 def apply_prefix_tweaks(wine: Wine) -> bool:
-    """Idempotently apply registry tweaks. Returns True if anything changed.
-
-    Cheap when nothing is missing (a text scan of user.reg, no wineserver).
-    Callers should kill the wineserver after a change: explorer.exe only
-    reads these values at startup.
+    """Apply the missing registry tweaks, True if anything changed. Text scan of user.reg; callers
+    kill the wineserver after a change, explorer.exe reads these at startup only.
     """
     reg_text = wine.user_reg_text()
     changed = False
@@ -522,7 +475,6 @@ def apply_prefix_tweaks(wine: Wine) -> bool:
 
 
 def _reg_default(reg_text: str, key: str) -> str | None:
-    """The default value of *key* (e.g. Software\\Classes\\x) in a .reg dump."""
     escaped = key.replace("\\", "\\\\")
     match = re.search(
         rf"^\[{re.escape(escaped)}\] \d+\n(?:#[^\n]*\n)*@=\"((?:[^\"\\]|\\.)*)\"",
