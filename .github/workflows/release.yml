@@ -3,9 +3,15 @@ name: release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "tag whose PPA upload to run again"
+        required: true
 
 jobs:
   github-release:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -19,6 +25,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   aur:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,6 +51,8 @@ jobs:
       SERIES: "noble resolute"
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Install packaging tools
         run: |
@@ -115,6 +124,7 @@ jobs:
           rm -f /tmp/pw
 
   copr:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Install copr-cli
