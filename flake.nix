@@ -12,7 +12,7 @@
       # Two Wine builds can't share a prefix session ("version mismatch"),
       # so override yabridge's wine up to this one (overlays.yabridge below).
       wine = pkgs.wineWow64Packages.staging;
-      version = "2.4.3";
+      version = "2.4.4";
 
       # tools ni-wine runs
       runtimePath = pkgs.lib.makeBinPath [
