@@ -39,14 +39,15 @@ sudo dnf copr enable selimbucher/ni-wine
 sudo dnf install ni-wine
 ```
 
-### Ubuntu (24.04 / 26.04)
+### Ubuntu (24.04 / 26.04) and Mint 22
 
 ```sh
-sudo dpkg --add-architecture i386   # 24.04 only
+sudo dpkg --add-architecture i386   # Ubuntu 24.04 only
 wget -qO- https://dl.winehq.org/wine-builds/winehq.key | sudo gpg --dearmor -o /etc/apt/keyrings/winehq-archive.key
 source /etc/os-release
 sudo wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/ubuntu/dists/$UBUNTU_CODENAME/winehq-$UBUNTU_CODENAME.sources
 sudo add-apt-repository ppa:selimbucher/ni-wine
+sudo apt update   # Mint only
 sudo apt install ni-wine
 ```
 
@@ -58,33 +59,16 @@ Access into it. Installed plugins land in that prefix.
 
 Do not launch with something like `wine "Native Access.exe"`.
 
-The cli:
-
-```
-usage: ni [-h] [-V] [--prefix PATH] <command> ...
-
-  launch [url]     start Native Access (same as native-access)
-  setup            redo the first-time setup (e.g. with `--no-ui`)
-  reinstall        wipe the Wine prefix and set everything up again
-  doctor [--fix]   check dependencies, prefix health, login-URL wiring
-  link PREFIX      use the installed products from a DAW's own prefix
-  unlink PREFIX    undo `link`
-  fix-msvcp140     replace Wine's msvcp140 stubs with the real DLLs
-```
-
-Every command takes `--help`. Environment: `NI_WINE_PREFIX` (prefix
-location, default `~/.wine-ni`), `WINE` (wine binary override),
-`NI_WINE_DEBUG` (keep Wine debug output), `NI_WINE_SCALE` (Native Access
-UI scale, default `GDK_SCALE`; `1` turns it off).
-
-Kontakt 8's installer does not run under Wine's MSI engine; ni-wine steps
-in at that point with a small `msi.dll` built from `shim/`, see
-`shim/README.md` if you want to know what it does.
+More commands with `ni --help`.
+Environment:
+- `NI_WINE_PREFIX` (prefix location, default `~/.wine-ni`),
+- `WINE` (wine binary override),
+- `NI_WINE_DEBUG` (keep Wine debug output), `NI_WINE_SCALE` (Native Access UI scale, default `GDK_SCALE`; `1` turns it off).
 
 ### Linux DAWs (yabridge)
 
-Use yabridge's development build, which has the fixes for Wine 10 and
-newer. Its last release (5.1.1) needs Wine 9.21, which Native Access
+You need to use yabridge's development build, which has the fixes for Wine 10 and
+newer. Its last release (5.1.1) would need Wine 9.21, which Native Access
 doesn't run on.
 
 - Arch: `yay -S yabridge-wine10-git yabridgectl-wine10-git`
