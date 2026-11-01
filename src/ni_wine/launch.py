@@ -7,7 +7,7 @@ import socket
 import subprocess
 from pathlib import Path
 
-from . import config, daemon, kontakt, link, msishim
+from . import config, daemon, guitarrig, kontakt, link, msishim
 from .desktop import ensure_url_handler
 from .powershell import install_profile
 from .setup_cmd import run_setup
@@ -155,6 +155,11 @@ def run_launch(prefix: Path, url: str | None = None) -> int:
     if apply_prefix_tweaks(wine) and not prefix_in_use(prefix):
         wine.kill_server()
     clear_updater_residue(prefix)
+    if not guitarrig.running(prefix):
+        for version in guitarrig.reset(prefix):
+            info(f"removed Guitar Rig {version}'s half-made preset database, rebuilt on next start")
+    for toml in guitarrig.group_plugins():
+        info(f"put Guitar Rig in a yabridge plugin group ({toml})")
     ensure_url_handler(prefix, quiet=True)
     if not native_access_running():
         fix_offscreen_window_state(prefix)

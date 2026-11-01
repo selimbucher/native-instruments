@@ -13,7 +13,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import config, daemon, kontakt, msishim, powershell, urlscheme
+from . import config, daemon, guitarrig, kontakt, msishim, powershell, urlscheme
 from .desktop import ensure_url_handler, scheme_handler_owner
 from .launch import clear_updater_residue, ui_scale
 from .util import which_first
@@ -122,6 +122,7 @@ def _prefix_checks(prefix: Path) -> list[Check]:
         *_install_checks(prefix),
         *_daemon_checks(prefix),
         *_kontakt_checks(prefix),
+        *_guitar_rig_checks(prefix),
         *_registry_checks(prefix),
         _residue_check(prefix),
     ]
@@ -262,6 +263,39 @@ def _kontakt_checks(prefix: Path) -> list[Check]:
             required=False,
         ),
     ]
+    return checks
+
+
+def _guitar_rig_checks(prefix: Path) -> list[Check]:
+    checks = []
+    for version in guitarrig.VERSIONS:
+        if not guitarrig.installed(prefix, version):
+            continue
+        broken = guitarrig.broken_database(prefix, version) is not None
+        checks.append(
+            Check(
+                f"Guitar Rig {version} preset database",
+                not broken,
+                ""
+                if not broken
+                else f"half-made by a cut-short first start, Guitar Rig {version} crashes "
+                "or imports nothing, run `ni doctor --fix`",
+            )
+        )
+    for toml, plugins in guitarrig.yabridge_groups().items():
+        missing = [name for name, group in plugins.items() if not group]
+        checks.append(
+            Check(
+                f"yabridge plugin group for {', '.join(missing or plugins)}",
+                not missing,
+                ""
+                if not missing
+                else "a second host process (plugin scan, sandboxed instance, VST2) gets "
+                "'another instance appears to be running' and saves no presets, "
+                f"added to {toml} by the next `ni launch` or `ni doctor --fix`",
+                required=False,
+            )
+        )
     return checks
 
 
@@ -490,6 +524,21 @@ def run_doctor(prefix: Path, *, fix: bool = False) -> int:
                 fix_notes.append(Check("Kontakt installer hook", False, problem))
             if kontakt.repair_registry(prefix):
                 fix_notes.append(Check("Kontakt 8 registry values written", True))
+            broken = [v for v in guitarrig.VERSIONS if guitarrig.broken_database(prefix, v)]
+            if broken and guitarrig.running(prefix):
+                fix_notes.append(
+                    Check(
+                        "Guitar Rig preset database",
+                        False,
+                        "Guitar Rig or a DAW is running, close it and re-run `ni doctor --fix`",
+                    )
+                )
+            for version in guitarrig.reset(prefix) if broken else []:
+                fix_notes.append(
+                    Check(f"removed Guitar Rig {version}'s half-made preset database", True)
+                )
+            for toml in guitarrig.group_plugins():
+                fix_notes.append(Check(f"Guitar Rig plugin groups added to {toml}", True))
         ensure_url_handler(prefix)
 
     checks = [
