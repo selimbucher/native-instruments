@@ -2,7 +2,7 @@ Name:           ni-wine
 Version:        2.4.4
 Release:        1%{?dist}
 Summary:        Native Instruments software under Wine
-License:        MIT
+License:        GPL-3.0-or-later
 URL:            https://github.com/selimbucher/native-instruments
 Source0:        %{url}/archive/refs/tags/v%{version}.tar.gz#/ni-wine-%{version}.tar.gz
 BuildArch:      noarch

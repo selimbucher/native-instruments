@@ -6,7 +6,7 @@ pkgdesc="Native Instruments software under Wine: setup, launch and product manag
 # ships a 32-bit Windows DLL built in build(), so not arch-independent
 arch=('x86_64')
 url="https://github.com/selimbucher/native-instruments"
-license=('MIT')
+license=('GPL-3.0-or-later')
 depends=('python' 'wine>=11' 'winetricks' 'cabextract' '7zip' 'msitools'
          'procps-ng' 'xorg-server-xvfb' 'zenity' 'xdg-utils'
          'desktop-file-utils' 'hicolor-icon-theme')

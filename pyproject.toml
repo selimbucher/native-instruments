@@ -7,7 +7,7 @@ name = "ni-wine"
 description = "Native Instruments software under Wine on Linux: setup, launch and product management"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = { text = "GPL-3.0-or-later" }
 dynamic = ["version"]
 
 [project.scripts]
