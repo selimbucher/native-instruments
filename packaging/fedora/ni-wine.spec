@@ -13,7 +13,7 @@ BuildRequires:  make
 BuildRequires:  desktop-file-utils
 BuildRequires:  python3-pytest
 
-Requires:       wine >= 11
+Requires:       (wine >= 11 or winehq-staging >= 11 or winehq-stable >= 11 or winehq-devel >= 11)
 Requires:       winetricks
 Requires:       cabextract
 Requires:       (7zip or p7zip-plugins)
