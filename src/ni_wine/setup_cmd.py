@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import config, daemon, msishim
+from . import config, daemon, hardware, msishim
 from .desktop import ensure_url_handler
 from .msvcp140 import fix_msvcp140
 from .powershell import install_powershell, install_profile
@@ -194,6 +194,11 @@ def run_setup(prefix: Path, *, ui: bool = False) -> None:
         problem = msishim.ensure(wine, prefix, quiet=True)
         if problem:
             warn(f"Kontakt installer hook not installed: {problem}")
+
+        progress.step("Installing NI controller support...", 94)
+        problem = hardware.ensure(wine, prefix, quiet=True)
+        if problem:
+            warn(f"NI controller support not installed: {problem}")
 
         progress.step("Registering login URL handler...", 96)
         if not ensure_url_handler(prefix, quiet=True):

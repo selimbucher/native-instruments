@@ -7,6 +7,7 @@ export PYBUILD_NAME = ni_wine
 override_dh_auto_build:
 	$(MAKE) -C shim CC=i686-w64-mingw32-gcc
 	cp shim/msi_shim32.dll src/ni_wine/data/msi_shim32.dll
+	$(MAKE) -C hardware install CC=x86_64-w64-mingw32-gcc
 	dh_auto_build
 
 execute_after_dh_auto_install:

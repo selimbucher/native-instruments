@@ -13,7 +13,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import config, daemon, guitarrig, kontakt, msishim, powershell, urlscheme
+from . import config, daemon, guitarrig, hardware, kontakt, msishim, powershell, urlscheme
 from .desktop import ensure_url_handler, scheme_handler_owner
 from .launch import clear_updater_residue, ui_scale
 from .util import which_first
@@ -123,6 +123,7 @@ def _prefix_checks(prefix: Path) -> list[Check]:
         *_daemon_checks(prefix),
         *_kontakt_checks(prefix),
         *_guitar_rig_checks(prefix),
+        _hardware_check(prefix),
         *_registry_checks(prefix),
         _residue_check(prefix),
     ]
@@ -297,6 +298,16 @@ def _guitar_rig_checks(prefix: Path) -> list[Check]:
             )
         )
     return checks
+
+
+def _hardware_check(prefix: Path) -> Check:
+    problems = hardware.describe(prefix)
+    return Check(
+        "NI controller support installed",
+        not problems,
+        "" if not problems else f"{problems}, installed by `native-access` or `ni doctor --fix`",
+        required=False,
+    )
 
 
 def _registry_checks(prefix: Path) -> list[Check]:
@@ -508,6 +519,9 @@ def run_doctor(prefix: Path, *, fix: bool = False) -> int:
     if fix:
         if config.drive_c(prefix).is_dir():
             wine = Wine(prefix)
+            problem = hardware.ensure(wine, prefix, quiet=True)
+            if problem:
+                fix_notes.append(Check("NI controller support", False, problem))
             if apply_prefix_tweaks(wine) and not prefix_in_use(prefix):
                 # explorer.exe reads the tray settings at startup only
                 wine.kill_server()

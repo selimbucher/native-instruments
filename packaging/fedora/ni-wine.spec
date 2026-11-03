@@ -9,6 +9,7 @@ BuildArch:      noarch
 
 BuildRequires:  python3-devel
 BuildRequires:  mingw32-gcc
+BuildRequires:  mingw64-gcc
 BuildRequires:  make
 BuildRequires:  desktop-file-utils
 BuildRequires:  python3-pytest
@@ -38,9 +39,10 @@ install path, and diagnostics for the common failure modes.
 %pyproject_buildrequires
 
 %build
-# the msi shim has to be in the package data before the wheel is built
+# the msi shim and the controller support have to be in the package data before the wheel is built
 make -C shim CC=i686-w64-mingw32-gcc
 cp shim/msi_shim32.dll src/ni_wine/data/msi_shim32.dll
+make -C hardware install CC=x86_64-w64-mingw32-gcc
 %pyproject_wheel
 
 %install

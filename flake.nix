@@ -39,6 +39,16 @@
         dontStrip = true;
       };
 
+      # NI controller support (hardware/README.md)
+      hardware = pkgs.pkgsCross.mingwW64.stdenv.mkDerivation {
+        pname = "ni-wine-hardware";
+        inherit version;
+        src = ./hardware;
+        buildPhase = "make CC=$CC";
+        installPhase = "mkdir -p $out && make install CC=$CC DATADIR=$out";
+        dontStrip = true;
+      };
+
       ni-wine = pkgs.python3Packages.buildPythonApplication {
         pname = "ni-wine";
         inherit version;
@@ -48,6 +58,7 @@
 
         postPatch = ''
           cp ${msi-shim}/msi_shim32.dll src/ni_wine/data/msi_shim32.dll
+          cp ${hardware}/* src/ni_wine/data/
         '';
 
         makeWrapperArgs = [ "--prefix" "PATH" ":" runtimePath ];
@@ -71,6 +82,7 @@
       packages.${system} = {
         default = ni-wine;
         msi-shim = msi-shim;
+        hardware = hardware;
       };
 
       # yabridge's last release (5.1.1) is built against Wine 9.21, which

@@ -7,7 +7,7 @@ import socket
 import subprocess
 from pathlib import Path
 
-from . import config, daemon, guitarrig, kontakt, link, msishim
+from . import config, daemon, guitarrig, hardware, kontakt, link, msishim
 from .desktop import ensure_url_handler
 from .powershell import install_profile
 from .setup_cmd import run_setup
@@ -150,6 +150,10 @@ def run_launch(prefix: Path, url: str | None = None) -> int:
     # on a too old Wine NA exits silently (Crashpad swallows the crash)
     check_wine_version(wine)
     ensure_prefix_build(wine)
+    # first, its server restart would kill what the steps below start
+    problem = hardware.ensure(wine, prefix)
+    if problem:
+        warn(f"NI controller support not installed: {problem}")
     # explorer.exe reads the tray settings at startup only, but don't kill the
     # server under Kontakt or a plugin host (Kontakt's Activate button starts us)
     if apply_prefix_tweaks(wine) and not prefix_in_use(prefix):
