@@ -1,11 +1,15 @@
 /*
- * Restarts NI's hardware services when NI devices come or go.
+ * Restarts NI's hardware services when NI devices arrive.
  *
  * NIHostIntegrationAgent and NIHardwareService enumerate devices when they
  * start and learn about later ones only from SERVICE_CONTROL_DEVICEEVENT,
  * which Wine doesn't send to services. Wine also starts them before winebus
  * and wineusb have created any device. On a Wine that sends the event this
  * service does nothing.
+ *
+ * Maschine doesn't reconnect to a restarted NIHostIntegrationAgent, it has to
+ * be restarted after a controller is plugged in while it runs. Removals don't
+ * restart anything.
  *
  * Messages go to OutputDebugString (WINEDEBUG=warn+seh).
  */
@@ -194,7 +198,7 @@ static DWORD CALLBACK device_changed(HCMNOTIFICATION notify, void *context, CM_N
         return ERROR_SUCCESS;
     log_line(L"nirescan: %s %s\n", action == CM_NOTIFY_ACTION_DEVICEINTERFACEARRIVAL ? L"arrival" : L"removal",
              data->u.DeviceInterface.SymbolicLink);
-    settle_later();
+    if (action == CM_NOTIFY_ACTION_DEVICEINTERFACEARRIVAL) settle_later();
     return ERROR_SUCCESS;
 }
 

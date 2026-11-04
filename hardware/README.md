@@ -15,6 +15,10 @@ device interfaces with NI's vendor id and restarts both services once the
 devices are up (one restart per burst of arrivals). On a Wine that does send
 service device events it does nothing.
 
+Maschine doesn't reconnect to a restarted NIHostIntegrationAgent: after a
+controller is plugged in while Maschine runs, Maschine (or the plugin) has to
+be restarted. Removals don't restart anything.
+
 ## nimk3.sys + maschine-mk3.inf
 
 A WDM driver for the Maschine MK3 display interface (`USB\VID_17CC&PID_1600&MI_05`),
