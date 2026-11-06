@@ -39,6 +39,8 @@ static const WCHAR *ni_services[] = {L"NIHardwareService", L"NIHostIntegrationAg
 static SERVICE_STATUS_HANDLE status_handle;
 static HANDLE stop_event, settle_timer;
 static LONG service_events;
+/* GetTickCount64() of the latest NI interface arrival */
+static volatile LONG64 last_arrival;
 
 void *memset(void *dst, int c, size_t n)
 {
@@ -149,7 +151,8 @@ static void wait_for_plugplay(SC_HANDLE manager)
     CloseServiceHandle(service);
 }
 
-static void restart_service(SC_HANDLE manager, const WCHAR *name)
+/* *started is set to the time the service is started again */
+static void restart_service(SC_HANDLE manager, const WCHAR *name, ULONGLONG *started)
 {
     QUERY_SERVICE_CONFIGW *config;
     SERVICE_STATUS status;
@@ -182,6 +185,7 @@ static void restart_service(SC_HANDLE manager, const WCHAR *name)
             start = FALSE;
         }
     }
+    if (start) *started = GetTickCount64();
     if (start && !StartServiceW(service, 0, NULL) && GetLastError() != ERROR_SERVICE_ALREADY_RUNNING)
         log_line(L"nirescan: starting %s failed, error %u\n", name, GetLastError());
     else if (start)
@@ -198,7 +202,9 @@ static DWORD CALLBACK device_changed(HCMNOTIFICATION notify, void *context, CM_N
         return ERROR_SUCCESS;
     log_line(L"nirescan: %s %s\n", action == CM_NOTIFY_ACTION_DEVICEINTERFACEARRIVAL ? L"arrival" : L"removal",
              data->u.DeviceInterface.SymbolicLink);
-    if (action == CM_NOTIFY_ACTION_DEVICEINTERFACEARRIVAL) settle_later();
+    if (action != CM_NOTIFY_ACTION_DEVICEINTERFACEARRIVAL) return ERROR_SUCCESS;
+    InterlockedExchange64(&last_arrival, GetTickCount64());
+    settle_later();
     return ERROR_SUCCESS;
 }
 
@@ -227,6 +233,7 @@ static void WINAPI service_main(DWORD argc, WCHAR **argv)
     CM_NOTIFY_FILTER filter = {0};
     HCMNOTIFICATION cm_notify = NULL;
     HDEVNOTIFY probe_notify;
+    ULONGLONG started[ARRAYSIZE(ni_services)] = {0};
     HANDLE handles[2];
     SC_HANDLE manager;
     unsigned int i;
@@ -257,7 +264,11 @@ static void WINAPI service_main(DWORD argc, WCHAR **argv)
         log_line(L"nirescan: CM_Register_Notification failed\n");
 
     /* what came up before the registration above */
-    if (ni_devices_present()) settle_later();
+    if (ni_devices_present())
+    {
+        last_arrival = GetTickCount64();
+        settle_later();
+    }
 
     handles[0] = stop_event;
     handles[1] = settle_timer;
@@ -273,7 +284,11 @@ static void WINAPI service_main(DWORD argc, WCHAR **argv)
             log_line(L"nirescan: Wine sends service device events, nothing to do\n");
             continue;
         }
-        for (i = 0; i < ARRAYSIZE(ni_services); i++) restart_service(manager, ni_services[i]);
+        /* A service started after the latest arrival has enumerated it already,
+         * and restarting NIHostIntegrationAgent again would cut off the NI
+         * software that connected in between. */
+        for (i = 0; i < ARRAYSIZE(ni_services); i++)
+            if (started[i] <= (ULONGLONG)last_arrival) restart_service(manager, ni_services[i], &started[i]);
     }
 
     if (cm_notify) CM_Unregister_Notification(cm_notify);
