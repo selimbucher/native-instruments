@@ -21,21 +21,41 @@ be restarted. Removals don't restart anything.
 
 ## nimk3.sys + maschine-mk3.inf
 
-A WDM driver for the Maschine MK3 display interface (`USB\VID_17CC&PID_1600&MI_05`),
-in place of NI's `nimc3usb.sys`, a KMDF driver Wine can't load. It attaches
-to the wineusb interface device, registers the device interface
-`{64352AA7-9DFD-4FA8-B6F0-474AF23A78E9}` and handles the IOCTLs the services
-send: kind, version, descriptors, control transfers, bulk writes to the two
-displays and the event queue. Pads and buttons are plain HID and need no
-driver.
+A WDM driver for two Maschine MK3 interfaces, in place of NI's
+`nimc3usb.sys`, a KMDF driver Wine can't load. It attaches to the wineusb
+interface devices, registers the device interface
+`{64352AA7-9DFD-4FA8-B6F0-474AF23A78E9}` on both and handles the IOCTLs the
+services send: kind, version, descriptors, control transfers and the event
+queue. Pads and buttons are plain HID and need no driver.
+
+- Display interface (`USB\VID_17CC&PID_1600&MI_05`, kind 3): bulk writes to
+  the two displays.
+- Audio interface (`USB\VID_17CC&PID_1600&MI_00`, kind 0): only the virtual
+  "Maschine MK3 Ctrl MIDI" port. In MIDI mode NIHostIntegrationAgent sends
+  to it with IOCTL `0x80892040` (`{1, length, bytes}`) and gets what a DAW
+  sends as event type 7 with the same payload. The driver also registers
+  the interface in `nimidi.h` for nimidi.exe. No USB I/O there but
+  descriptor reads, snd-usb-audio keeps the interface.
 
 NI's installers put `nimc3usb.inf` into `C:\windows\inf` without the files
 it copies. Wine installs it for any MK3 interface it hasn't bound yet and
 retries the missing copy forever, which blocks every later device. So
 `maschine-mk3.inf` also binds the other interfaces NI's INF lists, with no
-driver (audio and MIDI are ALSA's, firmware updates can't work under Wine).
+driver (firmware updates can't work under Wine).
 Wine binds a device once and keeps the binding. Between equally ranked INFs
 it takes the first in name order, and `maschine-mk3.inf` sorts first.
+
+## nimidi.exe
+
+An auto-start service that relays the virtual MIDI ports of the drivers
+(interface `GUID_DEVINTERFACE_NIWINE_MIDI` in `nimidi.h`) to ni-maschine
+(`../maschine`), which has the ALSA port. While a port exists it starts
+`ni-maschine --attach N` (the Unix path ni-wine writes to
+`HKLM\Software\ni-wine\ni-maschine`), which connects to 127.0.0.1:N and
+hands the connection to the running ni-maschine. A port it announces tells
+ni-maschine to leave the MK3 to NI's agent. Wine has no AF_UNIX sockets and
+can't give a service's Unix child pipes as stdio, hence TCP. Only a peer of
+the same Unix user is accepted (`/proc/net/tcp`).
 
 ## nidrvinst.exe
 
@@ -45,15 +65,15 @@ Rebinds devices that NI's INF got before ni-wine's was there:
 
 ## Building
 
-    make            # nimk3.sys nirescan.exe nidrvinst.exe
+    make            # nimk3.sys nirescan.exe nimidi.exe nidrvinst.exe
     make install    # copies them and the INF into ../src/ni_wine/data
 
-Check the imports (the driver must import ntoskrnl.exe only, anything else
-makes Wine load it as a DLL):
+Check the imports (the driver must import ntoskrnl.exe and hal.dll only,
+ntdll or kernel32 make Wine load it as a DLL):
 
     x86_64-w64-mingw32-objdump -p nimk3.sys | grep 'DLL Name'
 
 ## Debugging
 
     WINEDEBUG=warn+debugstr    # nimk3.sys (DbgPrint)
-    WINEDEBUG=warn+seh         # nirescan.exe (OutputDebugString)
+    WINEDEBUG=warn+seh         # nirescan.exe, nimidi.exe (OutputDebugString)

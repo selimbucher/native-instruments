@@ -1,0 +1,48 @@
+#include <stddef.h>
+#include "layout.h"
+
+/* bit -> id, default CC, LED (NIHostIntegrationAgent's MK3 map and LED table) */
+const struct button_info mk3_buttons[BTN_COUNT] =
+{
+    [0x00] = {"EncoderPush", 7, -1},    [0x01] = {NULL, 0, -1},         /* pedal plugged in */
+    [0x02] = {"EncoderUp", 30, 58},     [0x03] = {"EncoderRight", 31, 60},
+    [0x04] = {"EncoderDown", 32, 61},   [0x05] = {"EncoderLeft", 33, 59},
+    [0x06] = {"Shift", 0, 44},          [0x07] = {"Button8", 29, 19},
+    [0x08] = {"GroupA", 100, 29},       [0x09] = {"GroupB", 101, 30},
+    [0x0a] = {"GroupC", 102, 31},       [0x0b] = {"GroupD", 103, 32},
+    [0x0c] = {"GroupE", 104, 33},       [0x0d] = {"GroupF", 105, 34},
+    [0x0e] = {"GroupG", 106, 35},       [0x0f] = {"GroupH", 107, 36},
+    [0x10] = {"Notes", 52, 28},         [0x11] = {"Volume", 44, 20},
+    [0x12] = {"Swing", 45, 21},         [0x13] = {"Tempo", 47, 23},
+    [0x14] = {"NoteRep", 46, 22},       [0x15] = {"Lock", 48, 24},
+    [0x16] = {"FSwTip", 64, -1},        [0x17] = {"FSwRing", 65, -1},
+    [0x18] = {"PadMode", 81, 46},       [0x19] = {"Keyboard", 82, 47},
+    [0x1a] = {"Chords", 84, 48},        [0x1b] = {"Step", 83, 49},
+    [0x1c] = {"FixedVel", 80, 45},      [0x1d] = {"Scene", 85, 50},
+    [0x1e] = {"Pattern", 86, 51},       [0x1f] = {"Events", 87, 52},
+    [0x20] = {NULL, 0, -1},             [0x21] = {"Variation", 88, 53},
+    [0x22] = {"Duplicate", 89, 54},     [0x23] = {"Select", 90, 55},
+    [0x24] = {"Solo", 91, 56},          [0x25] = {"Mute", 92, 57},
+    [0x26] = {"Pitch", 49, 25},         [0x27] = {"Mod", 50, 26},
+    [0x28] = {"Perform", 51, 27},       [0x29] = {"Restart", 53, 37},
+    [0x2a] = {"Erase", 54, 38},         [0x2b] = {"Tap", 55, 39},
+    [0x2c] = {"Follow", 56, 40},        [0x2d] = {"Play", 57, 41},
+    [0x2e] = {"Rec", 58, 42},           [0x2f] = {"Stop", 59, 43},
+    [0x30] = {"Macro", 43, 11},         [0x31] = {"Setting", 41, 9},
+    [0x32] = {"Right", 111, 7},         [0x33] = {"Sampling", 39, 5},
+    [0x34] = {"Mixer", 37, 3},          [0x35] = {"Plugin", 35, 1},
+    [0x36] = {NULL, 0, -1},             [0x37] = {NULL, 0, -1},
+    [0x38] = {"Channel", 34, 0},        [0x39] = {"Arranger", 36, 2},
+    [0x3a] = {"Browser", 38, 4},        [0x3b] = {"Left", 110, 6},
+    [0x3c] = {"File", 40, 8},           [0x3d] = {"Auto", 42, 10},
+    [0x3e] = {NULL, 0, -1},             [0x3f] = {NULL, 0, -1},
+    [0x40] = {"Button1", 22, 12},       [0x41] = {"Button2", 23, 13},
+    [0x42] = {"Button3", 24, 14},       [0x43] = {"Button4", 25, 15},
+    [0x44] = {"Button5", 26, 16},       [0x45] = {"Button6", 27, 17},
+    [0x46] = {"Button7", 28, 18},       [0x47] = {"EncoderCap", 9, -1},
+    [0x48] = {"KnobCap8", 119, -1},     [0x49] = {"KnobCap7", 118, -1},
+    [0x4a] = {"KnobCap6", 117, -1},     [0x4b] = {"KnobCap5", 116, -1},
+    [0x4c] = {"KnobCap4", 115, -1},     [0x4d] = {"KnobCap3", 114, -1},
+    [0x4e] = {"KnobCap2", 113, -1},     [0x4f] = {"KnobCap1", 112, -1},
+    [BTN_TOUCHSTRIP_CAP] = {"TouchstripCap", 0, -1},
+};

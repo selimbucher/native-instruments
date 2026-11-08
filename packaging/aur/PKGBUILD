@@ -8,7 +8,7 @@ arch=('x86_64')
 url="https://github.com/selimbucher/native-instruments"
 license=('GPL-3.0-or-later')
 depends=('python' 'wine>=11' 'winetricks' 'cabextract' '7zip' 'msitools'
-         'procps-ng' 'xorg-server-xvfb' 'zenity' 'xdg-utils'
+         'alsa-lib' 'procps-ng' 'xorg-server-xvfb' 'zenity' 'xdg-utils'
          'desktop-file-utils' 'hicolor-icon-theme')
 makedepends=('git' 'python-build' 'python-installer' 'python-wheel' 'python-setuptools'
              'mingw-w64-gcc')
@@ -29,17 +29,21 @@ build() {
   cp shim/msi_shim32.dll src/ni_wine/data/msi_shim32.dll
   # NI controller support (hardware/README.md)
   make -C hardware install CC=x86_64-w64-mingw32-gcc
+  # MK3 MIDI mode without NI's software (maschine/README.md)
+  make -C maschine
   python -m build --wheel --no-isolation
 }
 
 check() {
   cd "$pkgname"
   python -m pytest
+  make -C maschine check
 }
 
 package() {
   cd "$pkgname"
   python -m installer --destdir="$pkgdir" dist/*.whl
+  install -Dm755 maschine/ni-maschine "$pkgdir/usr/bin/ni-maschine"
   install -Dm644 src/ni_wine/data/native-access.desktop \
     "$pkgdir/usr/share/applications/native-access.desktop"
   install -Dm644 src/ni_wine/data/native-access.svg \

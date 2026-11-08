@@ -5,12 +5,13 @@ Summary:        Native Instruments software under Wine
 License:        GPL-3.0-or-later
 URL:            https://github.com/selimbucher/native-instruments
 Source0:        %{url}/archive/refs/tags/v%{version}.tar.gz#/ni-wine-%{version}.tar.gz
-BuildArch:      noarch
 
 BuildRequires:  python3-devel
 BuildRequires:  mingw32-gcc
 BuildRequires:  mingw64-gcc
 BuildRequires:  make
+BuildRequires:  gcc
+BuildRequires:  pkgconfig(alsa)
 BuildRequires:  desktop-file-utils
 BuildRequires:  python3-pytest
 
@@ -19,6 +20,7 @@ Requires:       winetricks
 Requires:       cabextract
 Requires:       (7zip or p7zip-plugins)
 Requires:       msitools
+Requires:       alsa-lib
 Requires:       procps-ng
 Requires:       xorg-x11-server-Xvfb
 Requires:       zenity
@@ -43,11 +45,14 @@ install path, and diagnostics for the common failure modes.
 make -C shim CC=i686-w64-mingw32-gcc
 cp shim/msi_shim32.dll src/ni_wine/data/msi_shim32.dll
 make -C hardware install CC=x86_64-w64-mingw32-gcc
+%set_build_flags
+%make_build -C maschine
 %pyproject_wheel
 
 %install
 %pyproject_install
 %pyproject_save_files ni_wine
+install -Dm755 maschine/ni-maschine %{buildroot}%{_bindir}/ni-maschine
 # desktop file + icon by hand into %%{buildroot}%%{_datadir}/...
 install -Dm644 src/ni_wine/data/native-access.desktop \
     %{buildroot}%{_datadir}/applications/native-access.desktop
@@ -57,6 +62,7 @@ install -Dm644 src/ni_wine/data/native-access.svg \
 %check
 %pyproject_check_import
 %pytest
+make -C maschine check
 desktop-file-validate %{buildroot}%{_datadir}/applications/native-access.desktop
 
 %files -f %{pyproject_files}
@@ -64,6 +70,7 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/native-access.desktop
 %doc README.md
 %{_bindir}/ni
 %{_bindir}/native-access
+%{_bindir}/ni-maschine
 %{_datadir}/applications/native-access.desktop
 %{_datadir}/icons/hicolor/scalable/apps/native-access.svg
 

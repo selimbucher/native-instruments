@@ -10,10 +10,13 @@ result
 src/ni_wine/data/msi_shim32.dll
 src/ni_wine/data/nimk3.sys
 src/ni_wine/data/nirescan.exe
+src/ni_wine/data/nimidi.exe
 src/ni_wine/data/nidrvinst.exe
 src/ni_wine/data/maschine-mk3.inf
 hardware/*.sys
 hardware/*.exe
+maschine/ni-maschine
+maschine/test
 result-*
 debian/files
 debian/.debhelper/

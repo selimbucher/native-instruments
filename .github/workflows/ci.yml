@@ -26,3 +26,11 @@ jobs:
       - run: make -C shim
       - run: test -s shim/msi_shim32.dll
       - run: make -C hardware
+
+  maschine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - run: make -C maschine CFLAGS="-O2 -Werror"
+      - run: make -C maschine check

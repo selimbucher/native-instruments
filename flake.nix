@@ -49,6 +49,17 @@
         dontStrip = true;
       };
 
+      # MK3 MIDI mode without NI's software (maschine/README.md)
+      maschine = pkgs.stdenv.mkDerivation {
+        pname = "ni-maschine";
+        inherit version;
+        src = ./maschine;
+        nativeBuildInputs = [ pkgs.pkg-config ];
+        buildInputs = [ pkgs.alsa-lib ];
+        doCheck = true;
+        installPhase = "install -Dm755 ni-maschine $out/bin/ni-maschine";
+      };
+
       ni-wine = pkgs.python3Packages.buildPythonApplication {
         pname = "ni-wine";
         inherit version;
@@ -66,6 +77,7 @@
         nativeCheckInputs = [ pkgs.python3Packages.pytestCheckHook ];
 
         postInstall = ''
+          ln -s ${maschine}/bin/ni-maschine $out/bin/ni-maschine
           install -Dm644 src/ni_wine/data/native-access.desktop \
             $out/share/applications/native-access.desktop
           install -Dm644 src/ni_wine/data/native-access.svg \
@@ -83,6 +95,7 @@
         default = ni-wine;
         msi-shim = msi-shim;
         hardware = hardware;
+        maschine = maschine;
       };
 
       # yabridge's last release (5.1.1) is built against Wine 9.21, which

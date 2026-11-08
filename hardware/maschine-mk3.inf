@@ -1,5 +1,5 @@
-; Maschine MK3: nimk3.sys on the display interface, no driver on the
-; interfaces NI's nimc3usb.inf also claims (README.md).
+; Maschine MK3: nimk3.sys on the display and audio interfaces, no driver on
+; the other interfaces NI's nimc3usb.inf also claims (README.md).
 ; Wine picks the first of equally ranked drivers in file name order, this
 ; name sorts before nimc3usb.inf.
 
@@ -8,20 +8,20 @@ Signature="$Windows NT$"
 Class=NIUSBDevice
 ClassGuid={E76E9530-E0A0-4B82-A618-D3F60C00DDF4}
 Provider=%Provider%
-DriverVer=11/03/2026,1.0.0.0
+DriverVer=11/07/2026,1.1.0.0
 
 [Manufacturer]
 %Provider%=Models,NTamd64
 
 [Models.NTamd64]
-%Display%=Display,USB\VID_17CC&PID_1600&MI_05
-%Audio%=NoDriver,USB\VID_17CC&PID_1600&MI_00
+%Display%=Nimk3,USB\VID_17CC&PID_1600&MI_05
+%Audio%=Nimk3,USB\VID_17CC&PID_1600&MI_00
 %Update%=NoDriver,USB\VID_17CC&PID_1600&MI_06
 %Update%=NoDriver,USB\VID_17CC&PID_1602
 
-[Display.NTamd64]
+[Nimk3.NTamd64]
 
-[Display.NTamd64.Services]
+[Nimk3.NTamd64.Services]
 AddService=nimk3,0x00000002,Service
 
 [Service]

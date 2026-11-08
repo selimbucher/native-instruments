@@ -1,11 +1,15 @@
 /*
- * Maschine MK3 display interface driver for Wine.
+ * Maschine MK3 driver for Wine.
  *
- * Stands in for NI's nimc3usb.sys (KMDF, which Wine can't load) on the
- * display interface (MI_05). Attaches to the wineusb interface PDO, registers
- * the device interface NIHostIntegrationAgent looks for and implements the
- * IOCTLs it sends: descriptors, control transfers, bulk writes to the
- * displays and the per-handle event queue.
+ * Stands in for NI's nimc3usb.sys (KMDF, which Wine can't load) on two
+ * interfaces, attached to their wineusb interface PDOs:
+ * - display (MI_05): bulk writes to the two displays
+ * - audio (MI_00): only the virtual "Ctrl MIDI" port NIHostIntegrationAgent
+ *   sends MIDI mode to; the audio itself is ALSA's. nimidi.exe publishes the
+ *   port in ALSA (nimidi.h). No USB I/O but descriptor reads.
+ * Both register the device interface the agent looks for and implement the
+ * IOCTLs it sends: kind, descriptors, control transfers, bulk writes, MIDI and
+ * the per-handle event queue.
  *
  * Messages go to DbgPrint (WINEDEBUG=warn+debugstr).
  */
@@ -15,6 +19,7 @@
 #include <usbioctl.h>
 #include <usbdlib.h>
 #include <initguid.h>
+#include "nimidi.h"
 
 DEFINE_GUID(GUID_DEVINTERFACE_MK3, 0x64352aa7, 0x9dfd, 0x4fa8, 0xb6, 0xf0, 0x47, 0x4a, 0xf2, 0x3a, 0x78, 0xe9);
 
@@ -22,12 +27,24 @@ DEFINE_GUID(GUID_DEVINTERFACE_MK3, 0x64352aa7, 0x9dfd, 0x4fa8, 0xb6, 0xf0, 0x47,
 #define IOCTL_NI_QUEUE_DEPTH     0x80892008
 #define IOCTL_NI_QUEUE_ABORT     0x80892010
 #define IOCTL_NI_CONTROL         0x80892014
+#define IOCTL_NI_SEND_MIDI       0x80892040
 #define IOCTL_NI_WAIT_EVENT      0x80892048
 #define IOCTL_NI_GET_VERSION     0x80892804
 #define IOCTL_NI_WRITE_BULK      0x80892880
 #define IOCTL_NI_GET_KIND        0x80892884
 
+#define KIND_DEFAULT      0 /* NI's driver reports it for the audio interface */
 #define KIND_BULK_DISPLAY 3
+
+/* MIDI on the Ctrl port: NI's software sends {cable, length, bytes} with
+ * IOCTL_NI_SEND_MIDI and gets what DAWs send as events with the same payload */
+#define CTRL_CABLE 1
+#define EVENT_CTRL_MIDI 7
+#define EVENT_HEADER 12 /* u64 time, u8 type, u8 0, u16 length */
+#define MAX_EVENT_MIDI 255
+#define CTRL_PORT_NAME "Maschine MK3 Ctrl MIDI"
+#define OUT_SIZE 0x4000 /* MIDI from NI that nimidi.exe hasn't read yet */
+
 #define POOL_TAG 0x336b696e /* nik3 */
 
 #define TRACE(fmt, ...) DbgPrint("nimk3: %s: " fmt, __func__, ##__VA_ARGS__)
@@ -38,19 +55,37 @@ struct mk3
 {
     DEVICE_OBJECT *pdo;
     DEVICE_OBJECT *lower;
+    BOOLEAN ctrl;               /* the audio interface, see above */
     UNICODE_STRING iface;
+    UNICODE_STRING midi_iface;  /* ctrl only */
     USB_DEVICE_DESCRIPTOR desc;
     USB_CONFIGURATION_DESCRIPTOR *config;
     USBD_PIPE_HANDLE bulk;
     BOOLEAN started;
     BOOLEAN removed;
-    KSPIN_LOCK lock;
+    KSPIN_LOCK lock;            /* everything below and the handles' lists */
+    LIST_ENTRY handles;
+    LIST_ENTRY reads;           /* pending IOCTL_NIWINE_MIDI_READ */
+    ULONG readers;              /* handles that read MIDI */
+    ULONG out_len;
+    UCHAR out[OUT_SIZE];
 };
 
 struct handle
 {
-    LIST_ENTRY waiting;
-    ULONG depth;
+    LIST_ENTRY entry;
+    LIST_ENTRY waiting;         /* pending IOCTL_NI_WAIT_EVENT */
+    LIST_ENTRY events;          /* struct event */
+    ULONG depth, count;
+    BOOLEAN reader;             /* nimidi.exe's, gets no events */
+};
+
+/* as IOCTL_NI_WAIT_EVENT returns it */
+struct event
+{
+    LIST_ENTRY entry;
+    ULONG size;
+    UCHAR data[];
 };
 
 static NTSTATUS complete(IRP *irp, NTSTATUS status, ULONG_PTR info)
@@ -187,6 +222,10 @@ static NTSTATUS start_device(struct mk3 *dev)
 
     if ((status = get_descriptor_sync(dev, USB_DEVICE_DESCRIPTOR_TYPE, &dev->desc, sizeof(dev->desc), &len)))
         return status;
+    TRACE("%04x:%04x rev %04x, %s\n", dev->desc.idVendor, dev->desc.idProduct, dev->desc.bcdDevice,
+          dev->ctrl ? "audio interface" : "display interface");
+    if (dev->ctrl) return STATUS_SUCCESS;
+
     if ((status = get_descriptor_sync(dev, USB_CONFIGURATION_DESCRIPTOR_TYPE, &header, sizeof(header), &len)))
         return status;
     if (!(dev->config = ExAllocatePoolWithTag(NonPagedPool, header.wTotalLength, POOL_TAG)))
@@ -194,14 +233,12 @@ static NTSTATUS start_device(struct mk3 *dev)
     if ((status = get_descriptor_sync(dev, USB_CONFIGURATION_DESCRIPTOR_TYPE, dev->config, header.wTotalLength, &len)))
         return status;
     if (len < header.wTotalLength) return STATUS_DEVICE_DATA_ERROR;
-
-    TRACE("%04x:%04x rev %04x\n", dev->desc.idVendor, dev->desc.idProduct, dev->desc.bcdDevice);
     return select_display_interface(dev);
 }
 
-/* event queue */
+/* pending requests: event waits and MIDI reads */
 
-static void WINAPI cancel_wait(DEVICE_OBJECT *device, IRP *irp)
+static void WINAPI cancel_pending(DEVICE_OBJECT *device, IRP *irp)
 {
     struct mk3 *dev = device->DeviceExtension;
     KIRQL irql;
@@ -213,47 +250,254 @@ static void WINAPI cancel_wait(DEVICE_OBJECT *device, IRP *irp)
     complete(irp, STATUS_CANCELLED, 0);
 }
 
-static NTSTATUS queue_wait(struct mk3 *dev, struct handle *handle, IRP *irp)
+/* with dev->lock held */
+static NTSTATUS pend(LIST_ENTRY *list, IRP *irp)
 {
-    KIRQL irql;
-
-    KeAcquireSpinLock(&dev->lock, &irql);
-    IoSetCancelRoutine(irp, cancel_wait);
+    IoSetCancelRoutine(irp, cancel_pending);
     if (irp->Cancel && IoSetCancelRoutine(irp, NULL))
     {
-        KeReleaseSpinLock(&dev->lock, irql);
-        return complete(irp, STATUS_CANCELLED, 0);
+        irp->IoStatus.Status = STATUS_CANCELLED;
+        irp->IoStatus.Information = 0;
+        return STATUS_CANCELLED;
     }
     IoMarkIrpPending(irp);
-    InsertTailList(&handle->waiting, &irp->Tail.Overlay.ListEntry);
-    KeReleaseSpinLock(&dev->lock, irql);
+    InsertTailList(list, &irp->Tail.Overlay.ListEntry);
     return STATUS_PENDING;
 }
 
-static void flush_waits(struct mk3 *dev, struct handle *handle, NTSTATUS status)
+/* With dev->lock held: removes the first request of list, or NULL. Takes
+ * only requests that aren't being cancelled. */
+static IRP *take(LIST_ENTRY *list)
 {
-    LIST_ENTRY done, *entry;
+    LIST_ENTRY *entry;
+    IRP *irp;
+
+    while (!IsListEmpty(list))
+    {
+        entry = RemoveHeadList(list);
+        irp = CONTAINING_RECORD(entry, IRP, Tail.Overlay.ListEntry);
+        if (IoSetCancelRoutine(irp, NULL)) return irp;
+        InitializeListHead(entry); /* cancel routine owns it */
+    }
+    return NULL;
+}
+
+static void complete_all(LIST_ENTRY *done)
+{
+    while (!IsListEmpty(done))
+        IoCompleteRequest(CONTAINING_RECORD(RemoveHeadList(done), IRP, Tail.Overlay.ListEntry), IO_NO_INCREMENT);
+}
+
+/* the requests of file (all if NULL) in list finish with status */
+static void flush(struct mk3 *dev, LIST_ENTRY *list, FILE_OBJECT *file, NTSTATUS status)
+{
+    LIST_ENTRY keep, done;
     KIRQL irql;
     IRP *irp;
 
+    InitializeListHead(&keep);
     InitializeListHead(&done);
     KeAcquireSpinLock(&dev->lock, &irql);
-    while (!IsListEmpty(&handle->waiting))
+    while ((irp = take(list)))
     {
-        entry = RemoveHeadList(&handle->waiting);
-        irp = CONTAINING_RECORD(entry, IRP, Tail.Overlay.ListEntry);
-        if (IoSetCancelRoutine(irp, NULL))
-            InsertTailList(&done, entry);
-        else
-            InitializeListHead(entry); /* cancel routine owns it */
+        if (file && IoGetCurrentIrpStackLocation(irp)->FileObject != file)
+        {
+            IoSetCancelRoutine(irp, cancel_pending);
+            InsertTailList(&keep, &irp->Tail.Overlay.ListEntry);
+            continue;
+        }
+        irp->IoStatus.Status = status;
+        irp->IoStatus.Information = 0;
+        InsertTailList(&done, &irp->Tail.Overlay.ListEntry);
+    }
+    while (!IsListEmpty(&keep)) InsertTailList(list, RemoveHeadList(&keep));
+    KeReleaseSpinLock(&dev->lock, irql);
+    complete_all(&done);
+}
+
+/* event queue, as NI's driver keeps it: an event goes to every request
+ * waiting on a handle, or else into the handle's queue up to its depth */
+
+static void fill_event(IRP *irp, const UCHAR *data, ULONG size)
+{
+    ULONG out_len = IoGetCurrentIrpStackLocation(irp)->Parameters.DeviceIoControl.OutputBufferLength;
+
+    if (out_len < size)
+    {
+        irp->IoStatus.Status = STATUS_BUFFER_TOO_SMALL;
+        irp->IoStatus.Information = 0;
+        return;
+    }
+    RtlCopyMemory(irp->AssociatedIrp.SystemBuffer, data, size);
+    irp->IoStatus.Status = STATUS_SUCCESS;
+    irp->IoStatus.Information = size;
+}
+
+static void post_event(struct mk3 *dev, UCHAR type, const UCHAR *payload, USHORT len)
+{
+    UCHAR data[EVENT_HEADER + 2 + MAX_EVENT_MIDI];
+    LARGE_INTEGER time = KeQueryPerformanceCounter(NULL);
+    ULONG size = EVENT_HEADER + len;
+    LIST_ENTRY done, *entry;
+    struct handle *handle;
+    struct event *event;
+    KIRQL irql;
+    IRP *irp;
+
+    RtlCopyMemory(data, &time.QuadPart, 8);
+    data[8] = type;
+    data[9] = 0;
+    RtlCopyMemory(data + 10, &len, 2);
+    RtlCopyMemory(data + EVENT_HEADER, payload, len);
+
+    InitializeListHead(&done);
+    KeAcquireSpinLock(&dev->lock, &irql);
+    for (entry = dev->handles.Flink; entry != &dev->handles; entry = entry->Flink)
+    {
+        handle = CONTAINING_RECORD(entry, struct handle, entry);
+        if (handle->reader) continue;
+        if (IsListEmpty(&handle->events) && (irp = take(&handle->waiting)))
+        {
+            do
+            {
+                fill_event(irp, data, size);
+                InsertTailList(&done, &irp->Tail.Overlay.ListEntry);
+            } while ((irp = take(&handle->waiting)));
+            continue;
+        }
+        if (handle->count >= handle->depth) continue;
+        if (!(event = ExAllocatePoolWithTag(NonPagedPool, sizeof(*event) + size, POOL_TAG))) continue;
+        event->size = size;
+        RtlCopyMemory(event->data, data, size);
+        InsertTailList(&handle->events, &event->entry);
+        handle->count++;
     }
     KeReleaseSpinLock(&dev->lock, irql);
+    complete_all(&done);
+}
 
-    while (!IsListEmpty(&done))
+static NTSTATUS wait_event(struct mk3 *dev, struct handle *handle, IRP *irp)
+{
+    struct event *event;
+    NTSTATUS status;
+    KIRQL irql;
+
+    KeAcquireSpinLock(&dev->lock, &irql);
+    if (IsListEmpty(&handle->events))
     {
-        entry = RemoveHeadList(&done);
-        complete(CONTAINING_RECORD(entry, IRP, Tail.Overlay.ListEntry), status, 0);
+        status = pend(&handle->waiting, irp);
+        KeReleaseSpinLock(&dev->lock, irql);
+        if (status != STATUS_PENDING) IoCompleteRequest(irp, IO_NO_INCREMENT);
+        return status;
     }
+    event = CONTAINING_RECORD(RemoveHeadList(&handle->events), struct event, entry);
+    handle->count--;
+    KeReleaseSpinLock(&dev->lock, irql);
+
+    fill_event(irp, event->data, event->size);
+    ExFreePool(event);
+    status = irp->IoStatus.Status;
+    IoCompleteRequest(irp, IO_NO_INCREMENT);
+    return status;
+}
+
+static void free_events(struct mk3 *dev, struct handle *handle)
+{
+    LIST_ENTRY events;
+    KIRQL irql;
+
+    InitializeListHead(&events);
+    KeAcquireSpinLock(&dev->lock, &irql);
+    while (!IsListEmpty(&handle->events)) InsertTailList(&events, RemoveHeadList(&handle->events));
+    handle->count = 0;
+    KeReleaseSpinLock(&dev->lock, irql);
+    while (!IsListEmpty(&events)) ExFreePool(CONTAINING_RECORD(RemoveHeadList(&events), struct event, entry));
+}
+
+/* Ctrl MIDI port */
+
+/* with dev->lock held: hands the buffered MIDI to pending reads */
+static void deliver_out(struct mk3 *dev, LIST_ENTRY *done)
+{
+    ULONG out_len, len;
+    IRP *irp;
+
+    while (dev->out_len && (irp = take(&dev->reads)))
+    {
+        out_len = IoGetCurrentIrpStackLocation(irp)->Parameters.DeviceIoControl.OutputBufferLength;
+        len = min(out_len, dev->out_len);
+        RtlCopyMemory(irp->AssociatedIrp.SystemBuffer, dev->out, len);
+        RtlMoveMemory(dev->out, dev->out + len, dev->out_len - len);
+        dev->out_len -= len;
+        irp->IoStatus.Status = STATUS_SUCCESS;
+        irp->IoStatus.Information = len;
+        InsertTailList(done, &irp->Tail.Overlay.ListEntry);
+    }
+}
+
+/* in: u8 cable, u8 length, bytes */
+static NTSTATUS ioctl_send_midi(struct mk3 *dev, IRP *irp, ULONG in_len)
+{
+    UCHAR *buf = irp->AssociatedIrp.SystemBuffer;
+    LIST_ENTRY done;
+    KIRQL irql;
+
+    if (in_len < 2 || buf[0] != CTRL_CABLE || buf[1] > in_len - 2)
+        return complete(irp, STATUS_INVALID_PARAMETER, 0);
+
+    InitializeListHead(&done);
+    KeAcquireSpinLock(&dev->lock, &irql);
+    /* dropped while nobody reads, or when nimidi.exe fell behind */
+    if (dev->readers && dev->out_len + buf[1] <= OUT_SIZE)
+    {
+        RtlCopyMemory(dev->out + dev->out_len, buf + 2, buf[1]);
+        dev->out_len += buf[1];
+        deliver_out(dev, &done);
+    }
+    KeReleaseSpinLock(&dev->lock, irql);
+    complete_all(&done);
+    return complete(irp, STATUS_SUCCESS, 0);
+}
+
+static NTSTATUS ioctl_read_midi(struct mk3 *dev, struct handle *handle, IRP *irp)
+{
+    LIST_ENTRY done;
+    NTSTATUS status;
+    KIRQL irql;
+
+    if (!IoGetCurrentIrpStackLocation(irp)->Parameters.DeviceIoControl.OutputBufferLength)
+        return complete(irp, STATUS_BUFFER_TOO_SMALL, 0);
+
+    InitializeListHead(&done);
+    KeAcquireSpinLock(&dev->lock, &irql);
+    if (!handle->reader)
+    {
+        handle->reader = TRUE;
+        dev->readers++;
+    }
+    status = pend(&dev->reads, irp);
+    if (status == STATUS_PENDING) deliver_out(dev, &done);
+    KeReleaseSpinLock(&dev->lock, irql);
+    if (status != STATUS_PENDING) IoCompleteRequest(irp, IO_NO_INCREMENT);
+    complete_all(&done);
+    return status;
+}
+
+static NTSTATUS ioctl_write_midi(struct mk3 *dev, IRP *irp, ULONG in_len)
+{
+    UCHAR *buf = irp->AssociatedIrp.SystemBuffer;
+    UCHAR payload[2 + MAX_EVENT_MIDI];
+    ULONG pos, len;
+
+    for (pos = 0; pos < in_len; pos += len)
+    {
+        len = min(in_len - pos, MAX_EVENT_MIDI);
+        payload[0] = CTRL_CABLE;
+        payload[1] = len;
+        RtlCopyMemory(payload + 2, buf + pos, len);
+        post_event(dev, EVENT_CTRL_MIDI, payload, 2 + len);
+    }
+    return complete(irp, STATUS_SUCCESS, 0);
 }
 
 /* User requests finish before the IOCTL returns, with NI's 10 s timeout: the
@@ -291,6 +535,7 @@ static void abort_pipe(struct mk3 *dev)
 {
     struct _URB_PIPE_REQUEST urb;
 
+    if (!dev->bulk) return;
     RtlZeroMemory(&urb, sizeof(urb));
     urb.Hdr.Length = sizeof(urb);
     urb.Hdr.Function = URB_FUNCTION_ABORT_PIPE;
@@ -465,7 +710,7 @@ static NTSTATUS WINAPI dispatch_ioctl(DEVICE_OBJECT *device, IRP *irp)
     {
     case IOCTL_NI_GET_KIND:
         if (out_len < 4) return complete(irp, STATUS_BUFFER_TOO_SMALL, 0);
-        *(ULONG *)buf = KIND_BULK_DISPLAY;
+        *(ULONG *)buf = dev->ctrl ? KIND_DEFAULT : KIND_BULK_DISPLAY;
         return complete(irp, STATUS_SUCCESS, 4);
 
     case IOCTL_NI_GET_VERSION:
@@ -483,7 +728,26 @@ static NTSTATUS WINAPI dispatch_ioctl(DEVICE_OBJECT *device, IRP *irp)
         return ioctl_control(dev, irp, in_len, out_len);
 
     case IOCTL_NI_WRITE_BULK:
+        if (dev->ctrl) break;
         return ioctl_write_bulk(dev, irp, in_len);
+
+    case IOCTL_NI_SEND_MIDI:
+        if (!dev->ctrl) break;
+        return ioctl_send_midi(dev, irp, in_len);
+
+    case IOCTL_NIWINE_MIDI_NAME:
+        if (!dev->ctrl) break;
+        if (out_len < sizeof(CTRL_PORT_NAME) - 1) return complete(irp, STATUS_BUFFER_TOO_SMALL, 0);
+        RtlCopyMemory(buf, CTRL_PORT_NAME, sizeof(CTRL_PORT_NAME) - 1);
+        return complete(irp, STATUS_SUCCESS, sizeof(CTRL_PORT_NAME) - 1);
+
+    case IOCTL_NIWINE_MIDI_READ:
+        if (!dev->ctrl || !handle) break;
+        return ioctl_read_midi(dev, handle, irp);
+
+    case IOCTL_NIWINE_MIDI_WRITE:
+        if (!dev->ctrl) break;
+        return ioctl_write_midi(dev, irp, in_len);
 
     case IOCTL_NI_QUEUE_DEPTH:
     {
@@ -497,18 +761,19 @@ static NTSTATUS WINAPI dispatch_ioctl(DEVICE_OBJECT *device, IRP *irp)
 
     case IOCTL_NI_QUEUE_ABORT:
         if (!handle) return complete(irp, STATUS_INVALID_PARAMETER, 0);
-        flush_waits(dev, handle, STATUS_REQUEST_ABORTED);
+        flush(dev, &handle->waiting, NULL, STATUS_REQUEST_ABORTED);
+        free_events(dev, handle);
+        handle->depth = 0;
         return complete(irp, STATUS_SUCCESS, 0);
 
     case IOCTL_NI_WAIT_EVENT:
-        /* the display interface has no IN pipe, so nothing ever arrives */
+        /* the display interface has no IN pipe, nothing arrives there */
         if (!handle) return complete(irp, STATUS_INVALID_PARAMETER, 0);
-        return queue_wait(dev, handle, irp);
-
-    default:
-        TRACE("unknown ioctl %#lx, in %lu, out %lu\n", code, in_len, out_len);
-        return complete(irp, STATUS_INVALID_DEVICE_REQUEST, 0);
+        return wait_event(dev, handle, irp);
     }
+
+    TRACE("unknown ioctl %#lx, in %lu, out %lu\n", code, in_len, out_len);
+    return complete(irp, STATUS_INVALID_DEVICE_REQUEST, 0);
 }
 
 static NTSTATUS WINAPI dispatch_create(DEVICE_OBJECT *device, IRP *irp)
@@ -516,23 +781,36 @@ static NTSTATUS WINAPI dispatch_create(DEVICE_OBJECT *device, IRP *irp)
     IO_STACK_LOCATION *stack = IoGetCurrentIrpStackLocation(irp);
     struct mk3 *dev = device->DeviceExtension;
     struct handle *handle;
+    KIRQL irql;
 
     if (dev->removed) return complete(irp, STATUS_DELETE_PENDING, 0);
     if (!(handle = ExAllocatePoolWithTag(NonPagedPool, sizeof(*handle), POOL_TAG)))
         return complete(irp, STATUS_INSUFFICIENT_RESOURCES, 0);
+    RtlZeroMemory(handle, sizeof(*handle));
     InitializeListHead(&handle->waiting);
+    InitializeListHead(&handle->events);
     handle->depth = 1;
+    KeAcquireSpinLock(&dev->lock, &irql);
+    InsertTailList(&dev->handles, &handle->entry);
+    KeReleaseSpinLock(&dev->lock, irql);
     stack->FileObject->FsContext = handle;
     TRACE("handle %p, name length %u\n", handle, stack->FileObject->FileName.Length);
     return complete(irp, STATUS_SUCCESS, 0);
 }
 
+static void close_handle(struct mk3 *dev, FILE_OBJECT *file)
+{
+    struct handle *handle = file->FsContext;
+
+    flush(dev, &handle->waiting, NULL, STATUS_CANCELLED);
+    flush(dev, &dev->reads, file, STATUS_CANCELLED);
+}
+
 static NTSTATUS WINAPI dispatch_cleanup(DEVICE_OBJECT *device, IRP *irp)
 {
     IO_STACK_LOCATION *stack = IoGetCurrentIrpStackLocation(irp);
-    struct handle *handle = stack->FileObject->FsContext;
 
-    if (handle) flush_waits(device->DeviceExtension, handle, STATUS_CANCELLED);
+    if (stack->FileObject->FsContext) close_handle(device->DeviceExtension, stack->FileObject);
     return complete(irp, STATUS_SUCCESS, 0);
 }
 
@@ -540,15 +818,49 @@ static NTSTATUS WINAPI dispatch_close(DEVICE_OBJECT *device, IRP *irp)
 {
     IO_STACK_LOCATION *stack = IoGetCurrentIrpStackLocation(irp);
     struct handle *handle = stack->FileObject->FsContext;
+    struct mk3 *dev = device->DeviceExtension;
+    KIRQL irql;
 
     if (handle)
     {
         TRACE("handle %p\n", handle);
-        flush_waits(device->DeviceExtension, handle, STATUS_CANCELLED);
+        close_handle(dev, stack->FileObject);
+        free_events(dev, handle);
+        KeAcquireSpinLock(&dev->lock, &irql);
+        RemoveEntryList(&handle->entry);
+        if (handle->reader && !--dev->readers) dev->out_len = 0;
+        KeReleaseSpinLock(&dev->lock, irql);
         ExFreePool(handle);
         stack->FileObject->FsContext = NULL;
     }
     return complete(irp, STATUS_SUCCESS, 0);
+}
+
+/* pending requests fail, so that their callers notice */
+static void set_removed(struct mk3 *dev)
+{
+    LIST_ENTRY done, *entry, *list;
+    KIRQL irql;
+    IRP *irp;
+
+    dev->removed = TRUE;
+    IoSetDeviceInterfaceState(&dev->iface, FALSE);
+    if (dev->ctrl) IoSetDeviceInterfaceState(&dev->midi_iface, FALSE);
+
+    InitializeListHead(&done);
+    KeAcquireSpinLock(&dev->lock, &irql);
+    for (entry = &dev->handles, list = &dev->reads; ; list = &CONTAINING_RECORD(entry, struct handle, entry)->waiting)
+    {
+        while ((irp = take(list)))
+        {
+            irp->IoStatus.Status = STATUS_DELETE_PENDING;
+            irp->IoStatus.Information = 0;
+            InsertTailList(&done, &irp->Tail.Overlay.ListEntry);
+        }
+        if ((entry = entry->Flink) == &dev->handles) break;
+    }
+    KeReleaseSpinLock(&dev->lock, irql);
+    complete_all(&done);
 }
 
 static NTSTATUS WINAPI forward_done(DEVICE_OBJECT *device, IRP *irp, void *context)
@@ -586,28 +898,25 @@ static NTSTATUS WINAPI dispatch_pnp(DEVICE_OBJECT *device, IRP *irp)
         {
             dev->started = TRUE;
             IoSetDeviceInterfaceState(&dev->iface, TRUE);
+            if (dev->ctrl) IoSetDeviceInterfaceState(&dev->midi_iface, TRUE);
         }
         TRACE("start: %#lx\n", (long)status);
         return complete(irp, status, 0);
 
     case IRP_MN_SURPRISE_REMOVAL:
-        dev->removed = TRUE;
-        IoSetDeviceInterfaceState(&dev->iface, FALSE);
+        set_removed(dev);
         irp->IoStatus.Status = STATUS_SUCCESS;
         break;
 
     case IRP_MN_REMOVE_DEVICE:
-        if (!dev->removed)
-        {
-            dev->removed = TRUE;
-            IoSetDeviceInterfaceState(&dev->iface, FALSE);
-        }
+        if (!dev->removed) set_removed(dev);
         irp->IoStatus.Status = STATUS_SUCCESS;
         IoSkipCurrentIrpStackLocation(irp);
         status = IoCallDriver(dev->lower, irp);
         IoDetachDevice(dev->lower);
         if (dev->config) ExFreePool(dev->config);
         RtlFreeUnicodeString(&dev->iface);
+        RtlFreeUnicodeString(&dev->midi_iface);
         IoDeleteDevice(device);
         return status;
     }
@@ -616,13 +925,32 @@ static NTSTATUS WINAPI dispatch_pnp(DEVICE_OBJECT *device, IRP *irp)
     return IoCallDriver(dev->lower, irp);
 }
 
+/* the hardware ids end in the interface number, &MI_xx */
+static BOOLEAN is_audio_interface(DEVICE_OBJECT *pdo)
+{
+    static const WCHAR suffix[] = L"&MI_00";
+    const ULONG n = ARRAYSIZE(suffix) - 1;
+    WCHAR ids[512];
+    ULONG len, i, j, k;
+
+    RtlZeroMemory(ids, sizeof(ids));
+    if (IoGetDeviceProperty(pdo, DevicePropertyHardwareID, sizeof(ids) - 2 * sizeof(WCHAR), ids, &len))
+        return FALSE;
+    for (i = 0; ids[i]; i += j + 1)
+    {
+        for (j = 0; ids[i + j]; j++);
+        if (j < n) continue;
+        for (k = 0; k < n && (ids[i + j - n + k] & ~0x20) == (suffix[k] & ~0x20); k++);
+        if (k == n) return TRUE;
+    }
+    return FALSE;
+}
+
 static NTSTATUS WINAPI add_device(DRIVER_OBJECT *driver, DEVICE_OBJECT *pdo)
 {
     DEVICE_OBJECT *device;
     struct mk3 *dev;
     NTSTATUS status;
-
-    TRACE("pdo %p\n", pdo);
 
     if ((status = IoCreateDevice(driver, sizeof(*dev), NULL, FILE_DEVICE_UNKNOWN,
             FILE_DEVICE_SECURE_OPEN, FALSE, &device)))
@@ -631,17 +959,24 @@ static NTSTATUS WINAPI add_device(DRIVER_OBJECT *driver, DEVICE_OBJECT *pdo)
     dev = device->DeviceExtension;
     RtlZeroMemory(dev, sizeof(*dev));
     dev->pdo = pdo;
+    dev->ctrl = is_audio_interface(pdo);
     KeInitializeSpinLock(&dev->lock);
+    InitializeListHead(&dev->handles);
+    InitializeListHead(&dev->reads);
+    TRACE("pdo %p, %s\n", pdo, dev->ctrl ? "audio interface" : "display interface");
 
-    if ((status = IoRegisterDeviceInterface(pdo, &GUID_DEVINTERFACE_MK3, NULL, &dev->iface)))
+    if ((status = IoRegisterDeviceInterface(pdo, &GUID_DEVINTERFACE_MK3, NULL, &dev->iface))
+            || (dev->ctrl && (status = IoRegisterDeviceInterface(pdo, &GUID_DEVINTERFACE_NIWINE_MIDI, NULL, &dev->midi_iface))))
     {
         TRACE("IoRegisterDeviceInterface failed: %#lx\n", (long)status);
+        RtlFreeUnicodeString(&dev->iface);
         IoDeleteDevice(device);
         return status;
     }
     if (!(dev->lower = IoAttachDeviceToDeviceStack(device, pdo)))
     {
         RtlFreeUnicodeString(&dev->iface);
+        RtlFreeUnicodeString(&dev->midi_iface);
         IoDeleteDevice(device);
         return STATUS_NO_SUCH_DEVICE;
     }

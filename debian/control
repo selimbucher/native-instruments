@@ -9,15 +9,18 @@ Build-Depends: debhelper-compat (= 13),
                pybuild-plugin-pyproject,
                python3-pytest,
                gcc-mingw-w64-i686,
-               gcc-mingw-w64-x86-64
+               gcc-mingw-w64-x86-64,
+               libasound2-dev,
+               pkgconf
 Standards-Version: 4.6.2
 Homepage: https://github.com/selimbucher/native-instruments
 Rules-Requires-Root: no
 
 Package: ni-wine
-Architecture: all
+Architecture: amd64
 Depends: ${misc:Depends},
          ${python3:Depends},
+         ${shlibs:Depends},
          wine (>= 11) | winehq-staging | winehq-stable,
          winetricks,
          cabextract,

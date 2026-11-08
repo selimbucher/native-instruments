@@ -8,9 +8,14 @@ override_dh_auto_build:
 	$(MAKE) -C shim CC=i686-w64-mingw32-gcc
 	cp shim/msi_shim32.dll src/ni_wine/data/msi_shim32.dll
 	$(MAKE) -C hardware install CC=x86_64-w64-mingw32-gcc
+	$(MAKE) -C maschine
 	dh_auto_build
 
+execute_before_dh_auto_test:
+	$(MAKE) -C maschine check
+
 execute_after_dh_auto_install:
+	install -Dm755 maschine/ni-maschine debian/ni-wine/usr/bin/ni-maschine
 	install -Dm644 src/ni_wine/data/native-access.desktop \
 	    debian/ni-wine/usr/share/applications/native-access.desktop
 	install -Dm644 src/ni_wine/data/native-access.svg \
