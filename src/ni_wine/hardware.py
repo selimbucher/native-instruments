@@ -174,6 +174,28 @@ def ensure_service(prefix: Path) -> str | None:
     return None
 
 
+def connected_controllers(
+    hidraw: Path = Path("/sys/class/hidraw"), dev: Path = Path("/dev")
+) -> dict[str, bool]:
+    """NI HID devices plugged in ("<name> (/dev/hidrawN)") and whether this user can open them."""
+    found = {}
+    for node in sorted(hidraw.glob("hidraw*")):
+        try:
+            uevent = (node / "device" / "uevent").read_text()
+        except OSError:
+            continue
+        fields = {}
+        for line in uevent.splitlines():
+            key, _, value = line.partition("=")
+            fields[key] = value
+        if not fields.get("HID_ID", "").upper().startswith("0003:000017CC:"):
+            continue
+        path = dev / node.name
+        name = fields.get("HID_NAME", "NI device")
+        found[f"{name} ({path})"] = os.access(path, os.R_OK | os.W_OK)
+    return found
+
+
 def describe(prefix: Path) -> str:
     parts = [f"{name} missing or outdated" for name in outdated_files(prefix)]
     parts += [f"{name} service not registered" for name in unregistered_services(prefix)]

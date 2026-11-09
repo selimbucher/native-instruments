@@ -14,6 +14,7 @@ BuildRequires:  gcc
 BuildRequires:  pkgconfig(alsa)
 BuildRequires:  desktop-file-utils
 BuildRequires:  python3-pytest
+BuildRequires:  systemd-rpm-macros
 
 Requires:       (wine >= 11 or winehq-staging >= 11 or winehq-stable >= 11 or winehq-devel >= 11)
 Requires:       winetricks
@@ -58,6 +59,7 @@ install -Dm644 src/ni_wine/data/native-access.desktop \
     %{buildroot}%{_datadir}/applications/native-access.desktop
 install -Dm644 src/ni_wine/data/native-access.svg \
     %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/native-access.svg
+install -Dm644 src/ni_wine/data/70-ni-wine.rules %{buildroot}%{_udevrulesdir}/70-ni-wine.rules
 
 %check
 %pyproject_check_import
@@ -73,6 +75,7 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/native-access.desktop
 %{_bindir}/ni-maschine
 %{_datadir}/applications/native-access.desktop
 %{_datadir}/icons/hicolor/scalable/apps/native-access.svg
+%{_udevrulesdir}/70-ni-wine.rules
 
 
 %changelog

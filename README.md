@@ -32,6 +32,12 @@ home.packages = [ inputs.ni-wine.packages.${pkgs.system}.default ];
 
 Or without: `nix profile install github:selimbucher/native-instruments`.
 
+For the Maschine Mikro MK3, also in the system configuration:
+
+```nix
+services.udev.packages = [ inputs.ni-wine.packages.${pkgs.system}.default ];
+```
+
 ### Fedora
 
 ```sh

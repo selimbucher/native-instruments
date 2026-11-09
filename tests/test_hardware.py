@@ -106,3 +106,22 @@ def test_outdated_files_compares_with_the_shipped_ones(tmp_path, monkeypatch):
 
     hardware._targets(prefix)[hardware.DRIVER].write_bytes(b"old")
     assert hardware.outdated_files(prefix) == [hardware.DRIVER]
+
+
+def write_hidraw(root, name, hid_id, hid_name):
+    device = root / "sys" / name / "device"
+    device.mkdir(parents=True)
+    (device / "uevent").write_text(f"DRIVER=hid-generic\nHID_ID={hid_id}\nHID_NAME={hid_name}\n")
+
+
+def test_connected_controllers_lists_ni_devices_with_access(tmp_path):
+    write_hidraw(tmp_path, "hidraw0", "0003:0000046D:0000C548", "Logitech USB Receiver")
+    write_hidraw(tmp_path, "hidraw1", "0003:000017CC:00001600", "Maschine MK3")
+    write_hidraw(tmp_path, "hidraw2", "0003:000017CC:00001700", "Maschine Mikro MK3")
+    (tmp_path / "dev").mkdir()
+    (tmp_path / "dev" / "hidraw1").touch()
+    found = hardware.connected_controllers(tmp_path / "sys", tmp_path / "dev")
+    assert found == {
+        f"Maschine MK3 ({tmp_path}/dev/hidraw1)": True,
+        f"Maschine Mikro MK3 ({tmp_path}/dev/hidraw2)": False,
+    }

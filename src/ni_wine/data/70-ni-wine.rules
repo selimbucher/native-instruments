@@ -1,0 +1,3 @@
+# Maschine Mikro MK3: access for the logged-in user, as systemd's
+# 70-av-production.hwdb gives the other NI controllers (70-uaccess.rules)
+SUBSYSTEM=="hidraw", KERNELS=="0003:17CC:1700.*", ENV{ID_AV_PRODUCTION_CONTROLLER}="1"

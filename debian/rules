@@ -20,3 +20,5 @@ execute_after_dh_auto_install:
 	    debian/ni-wine/usr/share/applications/native-access.desktop
 	install -Dm644 src/ni_wine/data/native-access.svg \
 	    debian/ni-wine/usr/share/icons/hicolor/scalable/apps/native-access.svg
+	install -Dm644 src/ni_wine/data/70-ni-wine.rules \
+	    debian/ni-wine/usr/lib/udev/rules.d/70-ni-wine.rules

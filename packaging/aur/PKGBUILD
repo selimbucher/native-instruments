@@ -48,5 +48,6 @@ package() {
     "$pkgdir/usr/share/applications/native-access.desktop"
   install -Dm644 src/ni_wine/data/native-access.svg \
     "$pkgdir/usr/share/icons/hicolor/scalable/apps/native-access.svg"
+  install -Dm644 src/ni_wine/data/70-ni-wine.rules "$pkgdir/usr/lib/udev/rules.d/70-ni-wine.rules"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

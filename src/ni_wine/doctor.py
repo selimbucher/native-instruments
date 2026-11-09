@@ -310,6 +310,20 @@ def _hardware_check(prefix: Path) -> Check:
     )
 
 
+def _controller_checks() -> list[Check]:
+    controllers = hardware.connected_controllers()
+    if not controllers:
+        return []
+    blocked = [name for name, ok in controllers.items() if not ok]
+    detail = ""
+    if blocked:
+        detail = (
+            f"no access to {', '.join(blocked)}, replug it after installing ni-wine "
+            "(NixOS: add ni-wine to services.udev.packages)"
+        )
+    return [Check("NI controllers accessible", not blocked, detail, required=False)]
+
+
 def _registry_checks(prefix: Path) -> list[Check]:
     try:
         reg_text = (prefix / "user.reg").read_text(errors="replace")
@@ -558,6 +572,7 @@ def run_doctor(prefix: Path, *, fix: bool = False) -> int:
     checks = [
         *_dependency_checks(prefix),
         *_prefix_checks(prefix),
+        *_controller_checks(),
         *fix_notes,
         _elevation_check(prefix),
         _handler_check(),

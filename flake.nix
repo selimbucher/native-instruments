@@ -82,6 +82,7 @@
             $out/share/applications/native-access.desktop
           install -Dm644 src/ni_wine/data/native-access.svg \
             $out/share/icons/hicolor/scalable/apps/native-access.svg
+          install -Dm644 src/ni_wine/data/70-ni-wine.rules $out/lib/udev/rules.d/70-ni-wine.rules
         '';
 
         meta = {
