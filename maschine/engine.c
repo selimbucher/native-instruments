@@ -9,8 +9,11 @@
 #define MIDI_MAX 127
 #define MIDI14_MAX 0x3fff           /* pitch bend, song position, MCU faders */
 #define MIDI_SYSEX 0xf0
+#define MIDI_SYSEX_END 0xf7
 #define MCU_WHEEL_CC 0x3c
 #define MCU_MASTER_CHANNEL 8
+#define SYSEX_FOCUS 0x46            /* MIDI mode has the controller */
+#define SYSEX_SHIFT 0x4d
 
 /* knob counts per list step on the TEMPLATES and PAGES screens */
 #define SCROLL_COUNTS 120
@@ -204,15 +207,13 @@ static void send(struct engine *e, const struct control *c, const unsigned char 
     changed(e);
 }
 
-/* sends value v of c; an unchanged value only when forced */
-static void emit(struct engine *e, struct control *c, int v, bool force)
+/* sends value v of c, enabled or not */
+static void send_value(struct engine *e, struct control *c, int v)
 {
     unsigned char data[3];
     int len = 3;
 
-    if (!c->enabled) return;
     v = clamp(v, 0, is_14bit(c->message) ? MIDI14_MAX : MIDI_MAX);
-    if (!force && v == c->last) return;
     c->last = v;
     switch (c->message)
     {
@@ -269,6 +270,25 @@ static void emit(struct engine *e, struct control *c, int v, bool force)
     send(e, c, data, len);
 }
 
+/* sends value v of c if enabled; an unchanged value only when forced */
+static void emit(struct engine *e, struct control *c, int v, bool force)
+{
+    if (!c->enabled) return;
+    v = clamp(v, 0, is_14bit(c->message) ? MIDI14_MAX : MIDI_MAX);
+    if (!force && v == c->last) return;
+    send_value(e, c, v);
+}
+
+/* NI's SysEx to the host: NI's manufacturer id, the product, "MP" 00 01, what, value */
+static void send_sysex(struct engine *e, int what, int value)
+{
+    const unsigned char *product = e->model->sysex_id;
+    unsigned char data[] = {MIDI_SYSEX, 0x00, 0x21, 0x09, product[0], product[1], 'M', 'P', 0x00, 0x01,
+                            what, value, MIDI_SYSEX_END};
+
+    e->midi(e->ctx, data, sizeof(data));
+}
+
 /* the value a message carries for c, false if it isn't for c */
 static bool match(const struct control *c, const unsigned char *data, int len, int *value)
 {
@@ -318,7 +338,7 @@ static void apply(struct control *c, int v, bool echo)
     switch (c->type)
     {
     case CONTROL_KNOB:
-        if (c->mode != MODE_ABSOLUTE)
+        if (c->mode != MODE_ABSOLUTE || c->strip)
         {
             if (!echo) c->last_ext = v;
             break;
@@ -483,13 +503,13 @@ void engine_release_all(struct engine *e)
     struct control *c;
     int i;
 
-    for (i = 0; i < BTN_COUNT; i++)
+    for (i = 0; i < MAX_BUTTONS; i++)
         if ((c = e->held[i]))
         {
             e->held[i] = NULL;
             release(e, c);
         }
-    for (i = 0; i < MK3_PADS; i++)
+    for (i = 0; i < PADS; i++)
     {
         if ((c = e->held_pad[i]))
         {
@@ -510,9 +530,16 @@ void engine_reset_input(struct engine *e)
 {
     engine_release_all(e);
     memset(e->buttons, 0, sizeof(e->buttons));
+    e->shift_down = false;
     e->shift = false;
+    e->group_held = false;
     e->strip = 0;
     changed(e);
+}
+
+void engine_connected(struct engine *e)
+{
+    if (e->midi_mode) send_sysex(e, SYSEX_FOCUS, 1);
 }
 
 void engine_set_midi_mode(struct engine *e, bool on)
@@ -551,21 +578,108 @@ static void select_lists(struct engine *e)
     e->selected_group = map->group;
 }
 
+/* what the agent sends for a control of a page or template it leaves: gate pads
+ * their off value (notes always, even when disabled), pressure that isn't at 0
+ * and held gate buttons theirs */
+static void release_control(struct engine *e, struct control *c)
+{
+    int off = c->message == MSG_NOTE ? 0 : c->min;
+    bool release;
+    int i;
+
+    switch (c->type)
+    {
+    case CONTROL_PAD:
+        release = c->behavior == BEHAVIOR_GATE && (c->message == MSG_NOTE || c->last != c->min);
+        break;
+    case CONTROL_PRESSURE:
+        release = c->last > 0;
+        break;
+    case CONTROL_BUTTON:
+    case CONTROL_FOOTSWITCH:
+        release = c->behavior == BEHAVIOR_GATE && c->pressed;
+        break;
+    default:
+        release = false;
+        break;
+    }
+    if (!release) return;
+    send_value(e, c, off);
+    c->pos = 0;
+    c->pressed = false;
+    /* its physical release has nothing left to do */
+    for (i = 0; i < MAX_BUTTONS; i++)
+        if (e->held[i] == c) e->held[i] = NULL;
+    for (i = 0; i < PADS; i++)
+        if (e->held_pressure[i] == c) e->held_pressure[i] = NULL;
+}
+
+static int compare_ids(const void *a, const void *b)
+{
+    const struct control *x = *(struct control *const *)a;
+    const struct control *y = *(struct control *const *)b;
+
+    return strcmp(x->id, y->id);
+}
+
+/* the controls of a list in the order of their ids, as the agent keeps them */
+static void release_list(struct engine *e, struct controls *list)
+{
+    struct control **sorted = malloc(list->count * sizeof(*sorted));
+    int i;
+
+    if (!sorted)
+    {
+        for (i = 0; i < list->count; i++) release_control(e, &list->items[i]);
+        return;
+    }
+    for (i = 0; i < list->count; i++) sorted[i] = &list->items[i];
+    qsort(sorted, list->count, sizeof(*sorted), compare_ids);
+    for (i = 0; i < list->count; i++) release_control(e, sorted[i]);
+    free(sorted);
+}
+
+static void select_knob_page(struct engine *e, int page)
+{
+    struct map *map = engine_map(e);
+
+    if (page < 0 || page >= map->page_count) return;
+    release_list(e, &map->pages[map->page].controls);
+    map->page = page;
+    changed(e);
+}
+
+static void select_pad_page(struct engine *e, int page)
+{
+    struct map *map = engine_map(e);
+
+    if (page < 0 || page >= map->group_count || page == map->group) return;
+    release_list(e, &map->groups[map->group].controls);
+    map->group = page;
+    changed(e);
+}
+
+/* releases the template's controls and its current pages */
 static void select_template(struct engine *e, int index)
 {
-    if (index < 0 || index >= e->t.count || index == e->t.current) return;
+    struct map *map = engine_map(e);
+
+    if (index < 0 || index >= e->t.count) return;
+    release_list(e, &map->controls);
+    if (map->page_count) release_list(e, &map->pages[map->page].controls);
+    if (map->group_count) release_list(e, &map->groups[map->group].controls);
     e->t.current = index;
     select_lists(e);
     changed(e);
 }
 
-/* n of ButtonN, 0 for other bits */
-static int button_number(int bit)
+/* n of ButtonN, 0 for other bits and on models without them */
+static int button_number(const struct model *m, int bit)
 {
     int n;
 
     for (n = 1; n <= 8; n++)
-        if (bit == button_bit(n)) return n;
+        if (bit == m->screen_buttons[n - 1]) return n;
     return 0;
 }
 
@@ -575,7 +689,7 @@ static bool screen_button(struct engine *e, int bit)
     /* Button5-8 with Shift */
     static const int shift_screens[] = {SCREEN_MONITOR, SCREEN_KNOBS, SCREEN_PAGES, SCREEN_TEMPLATES};
     struct map *map = engine_map(e);
-    int n = button_number(bit);
+    int n = button_number(e->model, bit);
 
     if (!n) return false;
     if (e->shift)
@@ -591,45 +705,75 @@ static bool screen_button(struct engine *e, int bit)
     if (e->screen == SCREEN_TEMPLATES)
     {
         /* LOAD */
-        if (n == 6) select_template(e, e->selected_template);
+        if (n == 6 && e->selected_template != e->t.current) select_template(e, e->selected_template);
         return true;
     }
     if (e->screen == SCREEN_PAGES)
     {
         /* LOAD for knob pages and for pad pages */
-        if (n == 2 && e->selected_page < map->page_count) map->page = e->selected_page;
-        if (n == 4 && e->selected_group < map->group_count) map->group = e->selected_group;
+        if (n == 2 && e->selected_page != map->page) select_knob_page(e, e->selected_page);
+        if (n == 4) select_pad_page(e, e->selected_group);
         changed(e);
         return true;
     }
     return false;
 }
 
-/* Left/Right: knob pages, templates with Shift */
+/* Left/Right: knob pages, templates with Shift. Wrapping around a single one
+ * still releases it, as the agent does. */
 static void step_page(struct engine *e, int dir)
 {
     struct map *map = engine_map(e);
+    bool templates = e->shift;
+    bool wrap = wraps(e, !templates);
+    int count = templates ? e->t.count : map->page_count;
+    int current = templates ? e->t.current : map->page;
+    int next = step_index(current, count, dir, wrap);
 
-    if (e->shift) select_template(e, step_index(e->t.current, e->t.count, dir, wraps(e, false)));
-    else if (map->page_count > 1) map->page = step_index(map->page, map->page_count, dir, wraps(e, true));
+    if (count > 0 && (next != current || (wrap && count == 1)))
+    {
+        if (templates) select_template(e, next);
+        else select_knob_page(e, next);
+    }
     changed(e);
 }
 
-static bool is_group_button(int bit)
+/* the pages are where SHIFT and GROUP navigate */
+static bool navigates(const struct map *map)
 {
-    return bit >= BTN_GROUP_A && bit < BTN_GROUP_A + 8;
+    return map->knob_pages || map->pad_pages;
+}
+
+/* Group A-H on the MK3 */
+static bool is_group_button(const struct model *m, int bit)
+{
+    return m->group_a >= 0 && bit >= m->group_a && bit < m->group_a + 8;
 }
 
 void engine_button(struct engine *e, int bit, bool down)
 {
+    const struct model *m = e->model;
     struct map *map = engine_map(e);
     struct control *c;
 
-    if (bit < 0 || bit >= BTN_COUNT || e->buttons[bit] == down) return;
+    if (bit < 0 || bit > m->touchstrip_cap || e->buttons[bit] == down) return;
     e->buttons[bit] = down;
-    if (bit == BTN_SHIFT)
+    if (bit == m->shift)
     {
-        e->shift = down;
+        bool was_shift = e->shift;
+
+        e->shift_down = down;
+        e->shift = down && e->midi_mode;
+        /* without navigation the MK3 tells the host about SHIFT */
+        if (m->shift_sysex && map && !navigates(map) && (e->shift || was_shift))
+            send_sysex(e, SYSEX_SHIFT, e->shift);
+        changed(e);
+        return;
+    }
+    /* the Mikro's GROUP picks pad pages with the pads while held, else it is a control */
+    if (bit == m->group && map && map->pad_pages)
+    {
+        e->group_held = down;
         changed(e);
         return;
     }
@@ -645,26 +789,28 @@ void engine_button(struct engine *e, int bit, bool down)
         return;
     }
     if (!map) return;
-    if (e->shift && bit == BTN_CHANNEL)
+    if (e->shift_down && bit == m->mode)
     {
+        e->shift = false;
         engine_set_midi_mode(e, !e->midi_mode);
+        if (e->midi_mode) send_sysex(e, SYSEX_FOCUS, 1);
         return;
     }
     if (!e->midi_mode || screen_button(e, bit)) return;
-    if (map->knob_pages && (bit == BTN_LEFT || bit == BTN_RIGHT))
+    if (map->knob_pages && (bit == m->left || bit == m->right))
     {
-        step_page(e, bit == BTN_RIGHT ? 1 : -1);
+        step_page(e, bit == m->right ? 1 : -1);
         return;
     }
-    if (map->pad_pages && is_group_button(bit))
+    if (map->pad_pages && is_group_button(m, bit))
     {
-        if (bit - BTN_GROUP_A < map->group_count) map->group = bit - BTN_GROUP_A;
+        select_pad_page(e, bit - m->group_a);
         changed(e);
         return;
     }
-    if (!(c = engine_find(e, mk3_buttons[bit].id))) return;
+    if (!(c = engine_find(e, m->buttons[bit].id))) return;
     /* with navigation, Shift makes every button a navigation button */
-    if (e->shift && (map->knob_pages || map->pad_pages)) return;
+    if (e->shift && (m->shift_swallows || navigates(map))) return;
     e->held[bit] = c;
     press(e, c);
     changed(e);
@@ -729,7 +875,7 @@ void engine_knob(struct engine *e, int knob, int counts)
     struct map *map = engine_map(e);
     struct control *c;
 
-    if (!map || !e->midi_mode || knob < 1 || knob > MK3_KNOBS) return;
+    if (!map || !e->midi_mode || e->model->knobs_at < 0 || knob < 1 || knob > KNOBS) return;
     if (e->shift)
     {
         /* knob 5 of the Shift screen shows values or bars */
@@ -752,7 +898,7 @@ void engine_knob(struct engine *e, int knob, int counts)
         return;
     }
     if ((c = engine_find_n(e, "Knob", knob)) && c->enabled)
-        knob_turn(e, c, counts * (1.0f / MK3_KNOB_COUNTS), false);
+        knob_turn(e, c, counts * (1.0f / KNOB_COUNTS), false);
 }
 
 void engine_encoder(struct engine *e, int ticks)
@@ -761,7 +907,7 @@ void engine_encoder(struct engine *e, int ticks)
     unsigned char data[3];
     int n = ticks, v;
 
-    if (!e->midi_mode || !(c = engine_find(e, "Encoder")) || !c->enabled) return;
+    if (!e->midi_mode || !(c = engine_find(e, e->model->wheel)) || !c->enabled) return;
     if (c->ticks > 1)
     {
         c->ticks_left += ticks;
@@ -808,12 +954,12 @@ void engine_strip(struct engine *e, int pos)
     if ((e->strip == 0) != (pos == 0))
     {
         e->strip = pos;
-        engine_button(e, BTN_TOUCHSTRIP_CAP, pos != 0);
+        engine_button(e, e->model->touchstrip_cap, pos != 0);
         if (!pos) return;
     }
     e->strip = pos;
     if (!(c = engine_find(e, "Touchstrip")) || !c->enabled) return;
-    x = (clamp(pos, 1, MK3_STRIP_MAX) - 1) / (float)(MK3_STRIP_MAX - 1);
+    x = (clamp(pos, 1, e->model->strip_max) - 1) / (float)(e->model->strip_max - 1);
     knob_turn(e, c, x - c->pos, true);
     if (c->mode != MODE_ABSOLUTE) c->pos = x;
     changed(e);
@@ -822,7 +968,7 @@ void engine_strip(struct engine *e, int pos)
 void engine_pedal(struct engine *e, int value)
 {
     struct control *c;
-    float x = clamp(value, 0, MK3_PEDAL_MAX) / (float)MK3_PEDAL_MAX;
+    float x = clamp(value, 0, PEDAL_MAX) / (float)PEDAL_MAX;
 
     if (!e->midi_mode || !(c = engine_find(e, "Pedal")) || !c->enabled) return;
     c->pos = x;
@@ -907,9 +1053,15 @@ static void pad_hit(struct engine *e, int pad, float x)
 void engine_pad(struct engine *e, int pad, int kind, int value)
 {
     struct control *c;
-    float x = value / (float)MK3_PAD_MAX;
+    float x = value / (float)PAD_MAX;
 
-    if (!engine_map(e) || !e->midi_mode || pad < 0 || pad >= MK3_PADS) return;
+    if (!engine_map(e) || !e->midi_mode || pad < 0 || pad >= PADS) return;
+    /* the Mikro's GROUP held: pad n picks pad page n, the pads send nothing */
+    if (e->group_held)
+    {
+        if (kind == PAD_HIT_ON) select_pad_page(e, pad);
+        return;
+    }
     switch (kind)
     {
     case PAD_PRESSURE:
@@ -969,8 +1121,9 @@ static unsigned char control_led(const struct control *c)
 static void strip_leds(const struct engine *e, unsigned char *leds)
 {
     const struct control *c = engine_find(e, "Touchstrip");
-    const int last = MK3_STRIP_LEDS - 1, center = last / 2;
-    int i, color, end, dot = -1;
+    const int last = STRIP_LEDS - 1, center = last / 2;
+    unsigned char *strip = leds + e->model->led_strip;
+    int i, color, end, bar, dot = -1;
     bool lit;
     float v;
 
@@ -984,7 +1137,7 @@ static void strip_leds(const struct engine *e, unsigned char *leds)
         dot = lroundf(last * c->pos);
     }
     end = lroundf(last * v);
-    for (i = 0; i < MK3_STRIP_LEDS; i++)
+    for (i = 0; i < STRIP_LEDS; i++)
     {
         switch (c->ledpattern)
         {
@@ -992,18 +1145,21 @@ static void strip_leds(const struct engine *e, unsigned char *leds)
             lit = i == end;
             break;
         case STRIP_CENTER:
-            lit = i == center || (i > center ? i <= end : i >= end);
+            /* the centre LED and those towards the value */
+            bar = lroundf(STRIP_LEDS * v);
+            if (v <= 0.5f) lit = i == center || (bar <= i && i < center);
+            else lit = i == center || (center < i && i < bar);
             break;
         default:
-            lit = i < lroundf(MK3_STRIP_LEDS * v);
+            lit = i < lroundf(STRIP_LEDS * v);
             break;
         }
-        leds[MK3_LED_STRIP + i] = led_byte(color, lit ? LED_BRIGHT : LED_DIM);
+        strip[i] = lit ? led_byte(color, LED_BRIGHT) : 0;
     }
-    if (dot >= 0 && dot < MK3_STRIP_LEDS) leds[MK3_LED_STRIP + dot] = led_byte(LED_WHITE, LED_BRIGHT);
+    if (dot >= 0 && dot < STRIP_LEDS) strip[dot] = led_byte(LED_WHITE, LED_BRIGHT);
 }
 
-/* Left/Right light while there is somewhere to go */
+/* the MK3's Left/Right light while there is somewhere to go */
 static void arrow_leds(const struct engine *e, unsigned char *leds)
 {
     const struct map *map = engine_map(e);
@@ -1013,56 +1169,67 @@ static void arrow_leds(const struct engine *e, unsigned char *leds)
     bool left = count >= 2 && (wrap || current > 0);
     bool right = count >= 2 && (wrap || current < count - 1);
 
-    leds[LED_LEFT] = led_byte(LED_WHITE, left ? LED_BRIGHT : LED_DIM);
-    leds[LED_RIGHT] = led_byte(LED_WHITE, right ? LED_BRIGHT : LED_DIM);
+    leds[e->model->led_left] = led_byte(LED_WHITE, left ? LED_BRIGHT : LED_DIM);
+    leds[e->model->led_right] = led_byte(LED_WHITE, right ? LED_BRIGHT : LED_DIM);
 }
 
-void engine_leds(const struct engine *e, unsigned char leds[MK3_LEDS])
+/* pad pages as colours: on the MK3's Group A-H, on the Mikro's pads while GROUP is held */
+static unsigned char page_led(const struct map *map, int page)
 {
-    const struct map *map = engine_map(e);
-    const struct control *c;
-    int bit, group, pad, n, screen = engine_shown_screen(e);
+    if (page >= map->group_count) return 0;
+    return led_byte(palette_led(map->groups[page].color), page == map->group ? LED_BRIGHT : LED_DIM);
+}
 
-    memset(leds, 0, MK3_LEDS);
-    if (!map || !e->midi_mode) return;
-    for (bit = 0; bit < BTN_COUNT; bit++)
-    {
-        const struct button_info *b = &mk3_buttons[bit];
+/* the MK3's Shift screen lights the screen buttons 5-8, TEMPLATES and PAGES none */
+static void screen_button_leds(const struct engine *e, unsigned char *leds)
+{
+    const struct model *m = e->model;
+    int screen = engine_shown_screen(e), n;
 
-        if (!b->id || b->led < 0 || bit == BTN_SHIFT) continue;
-        if (map->pad_pages && is_group_button(bit))
-        {
-            group = bit - BTN_GROUP_A;
-            if (group < map->group_count)
-                leds[b->led] = led_byte(palette_led(map->groups[group].color),
-                                        group == map->group ? LED_BRIGHT : LED_DIM);
-            continue;
-        }
-        if ((c = engine_find(e, b->id))) leds[b->led] = control_led(c);
-    }
-    leds[LED_SHIFT] = led_byte(LED_WHITE, e->shift ? LED_BRIGHT : LED_DIM);
-    if (map->knob_pages) arrow_leds(e, leds);
-    /* the Shift screen lights the screen buttons 5-8, TEMPLATES and PAGES none */
     for (n = 1; n <= 8; n++)
     {
-        unsigned char *led = &leds[mk3_buttons[button_bit(n)].led];
+        unsigned char *led = &leds[m->buttons[m->screen_buttons[n - 1]].led];
 
         if (screen == SCREEN_SHIFT) *led = n >= 5 ? led_byte(LED_WHITE, LED_BRIGHT) : 0;
         else if (screen == SCREEN_TEMPLATES || screen == SCREEN_PAGES) *led = 0;
     }
-    for (pad = 0; pad < MK3_PADS; pad++)
+}
+
+void engine_leds(const struct engine *e, unsigned char leds[MAX_LEDS])
+{
+    const struct model *m = e->model;
+    const struct map *map = engine_map(e);
+    const struct control *c;
+    int bit, pad;
+
+    memset(leds, 0, MAX_LEDS);
+    if (!map || !e->midi_mode) return;
+    for (bit = 0; bit <= m->touchstrip_cap; bit++)
     {
-        c = engine_pad_control(e, pad_number(pad));
-        leds[MK3_LED_PADS + pad] = c ? control_led(c) : 0;
+        const struct button_info *b = &m->buttons[bit];
+
+        if (!b->id || b->led < 0 || bit == m->shift) continue;
+        if (map->pad_pages && is_group_button(m, bit)) leds[b->led] = page_led(map, bit - m->group_a);
+        else if ((c = engine_find(e, b->id))) leds[b->led] = control_led(c);
+    }
+    leds[m->led_shift] = led_byte(LED_WHITE, e->shift ? LED_BRIGHT : LED_DIM);
+    if (m->left >= 0 && map->knob_pages) arrow_leds(e, leds);
+    if (m->screen_buttons[0] >= 0) screen_button_leds(e, leds);
+    for (pad = 0; pad < PADS; pad++)
+    {
+        if (e->group_held) leds[m->led_pads + pad] = page_led(map, pad);
+        else if ((c = engine_pad_control(e, pad_number(pad)))) leds[m->led_pads + pad] = control_led(c);
     }
     strip_leds(e, leds);
 }
 
 /* setup */
 
-void engine_init(struct engine *e, void (*midi)(void *, const unsigned char *, int), void *ctx)
+void engine_init(struct engine *e, const struct model *model,
+                 void (*midi)(void *, const unsigned char *, int), void *ctx)
 {
     memset(e, 0, sizeof(*e));
+    e->model = model;
     e->midi = midi;
     e->ctx = ctx;
     e->screen = SCREEN_KNOBS;
@@ -1093,6 +1260,7 @@ void engine_set_templates(struct engine *e, struct templates *t)
     e->screen = e->t.display_mode;
     if (e->screen != SCREEN_KNOBS && e->screen != SCREEN_MONITOR) e->screen = SCREEN_KNOBS;
     memset(e->buttons, 0, sizeof(e->buttons));
+    e->shift_down = false;
     e->shift = false;
     if (e->t.count) select_lists(e);
     changed(e);

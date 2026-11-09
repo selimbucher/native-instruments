@@ -313,14 +313,14 @@ static void pads(struct canvas *c, const struct engine *e)
         }
         else
         {
-            if (!(button = engine_find(e, mk3_buttons[BTN_GROUP_A + i].id))) continue;
+            if (!(button = engine_find(e, e->model->buttons[e->model->group_a + i].id))) continue;
             rgb = button->led ? palette_rgb(button->led->color_on) : WHITE;
             control_label(button, label, sizeof(label));
         }
         cell(c, x, y, 26, 5, label, rgb, map->pad_pages && i == map->group);
     }
     fill(c, 0, TOP_H + 70, SCREEN_W, 1, LINE);
-    for (i = 0; i < MK3_PADS; i++)
+    for (i = 0; i < PADS; i++)
     {
         pad = engine_pad_control(e, pad_number(i));
         x = (i % 4) * CELL_W + 6;
@@ -478,4 +478,29 @@ void screen_draw(const struct engine *e, struct canvas s[2])
         screen_knobs(s, e);
         break;
     }
+}
+
+/* the Mikro MK3's display */
+
+static void mono_text_center(struct mono_canvas *c, const struct font *f, int y, const char *s)
+{
+    const unsigned short *g;
+    int i, j, x = (MONO_W - text_width(f, s)) / 2;
+
+    if (x < 0) x = 0;
+    while (*s && x + f->w <= MONO_W)
+    {
+        g = f->glyphs + glyph_index(next_char(&s)) * f->h;
+        for (j = 0; j < f->h && y + j < MONO_H; j++)
+            for (i = 0; i < f->w; i++)
+                if (g[j] >> (15 - i) & 1) c->px[y + j][x + i] = 1;
+        x += f->w;
+    }
+}
+
+/* like the agent: dark while idle, a banner in MIDI mode */
+void screen_draw_mono(const struct engine *e, struct mono_canvas *c)
+{
+    memset(c, 0, sizeof(*c));
+    if (e->midi_mode && engine_map(e)) mono_text_center(c, &small, (MONO_H - small.h) / 2, "MIDI MODE");
 }

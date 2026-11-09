@@ -1,4 +1,4 @@
-/* Controller Editor templates for the Maschine MK3 (MaschineMK3.ncs, XML
+/* Controller Editor templates (MaschineMK3.ncs, MaschineMikroMK3.ncs, XML
  * <ni-controller-midi-map>) and the state MIDI mode keeps per control. Element
  * names, defaults and meanings follow NIHostIntegrationAgent's parser. */
 
@@ -6,6 +6,8 @@
 #define TEMPLATE_H
 
 #include <stdbool.h>
+
+struct model;
 
 enum control_type
 {
@@ -73,6 +75,7 @@ struct control
     bool ondown;                /* buttons act when pressed, else when released */
     bool onifdown;              /* the LED shows the button, not the host */
     bool bipolar;
+    bool strip;                 /* the touch strip: host values don't move it */
     float on_pressure;          /* note on and off thresholds of pressure pads */
     float off_pressure;
     int color_mode;             /* LED_MODE_*, led elements */
@@ -137,7 +140,7 @@ struct templates
 
 int templates_load(struct templates *t, const char *path);
 /* NI's "Template 1", what the agent writes when there is no template yet */
-void templates_default(struct templates *t);
+void templates_default(struct templates *t, const struct model *model);
 void templates_free(struct templates *t);
 struct control *controls_find(const struct controls *list, const char *id);
 /* whether value v turns toggle c on */
@@ -148,6 +151,8 @@ int palette_led(int index);
 /* palette index -> 0xRRGGBB for the screens */
 unsigned int palette_rgb(int index);
 #define PALETTE_SIZE 19
+#define PALETTE_RED 0
+#define PALETTE_BLUE 9
 #define PALETTE_BLACK 16
 #define PALETTE_GREY 17
 #define PALETTE_WHITE 18

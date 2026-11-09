@@ -1,6 +1,6 @@
 """NI controller support: nimk3.sys on the MK3 display and audio interfaces, the nirescan and
-nimidi services in the prefix (hardware/README.md), and the ni-maschine user service
-(maschine/README.md)."""
+nimidi services and the bmidilib2.dll stand-in in the prefix (hardware/README.md), and the
+ni-maschine user service (maschine/README.md)."""
 
 from __future__ import annotations
 
@@ -19,6 +19,8 @@ from .wine import Wine, prefix_in_use
 INF = "maschine-mk3.inf"
 DRIVER = "nimk3.sys"
 SERVICES = ("nirescan", "nimidi")
+# replaces Bome's library: NI's services make their MIDI ports with it (the Mikro MK3's)
+BMIDI = "bmidilib2.dll"
 # the MK3 interfaces nimk3 drives: the displays and the audio interface's Ctrl MIDI port
 INTERFACE_IDS = (r"USB\VID_17CC&PID_1600&MI_05", r"USB\VID_17CC&PID_1600&MI_00")
 DAEMON = "ni-maschine"
@@ -52,6 +54,7 @@ def _targets(prefix: Path) -> dict[str, Path]:
     return {
         INF: windows / "inf" / INF,
         DRIVER: windows / "system32/drivers" / DRIVER,
+        BMIDI: windows / "system32" / BMIDI,
         **{f"{name}.exe": windows / "system32" / f"{name}.exe" for name in SERVICES},
     }
 

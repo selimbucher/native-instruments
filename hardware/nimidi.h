@@ -1,6 +1,7 @@
 /*
- * Interface between a driver with a virtual MIDI port (nimk3.sys) and
- * nimidi.exe, which relays the port to ni-maschine (ALSA).
+ * How virtual MIDI ports reach nimidi.exe, which relays them to ni-maschine
+ * (ALSA): from a driver (nimk3.sys) and from bmidilib2.dll, ni-wine's stand-in
+ * for Bome's library that NI's services make ports with.
  *
  * The driver registers GUID_DEVINTERFACE_NIWINE_MIDI for each port. "Out" is
  * what NI's software sends (the port's input in a DAW), "in" what a DAW sends
@@ -21,11 +22,15 @@ DEFINE_GUID(GUID_DEVINTERFACE_NIWINE_MIDI, 0xe7be2b5a, 0x0074, 0x492e, 0xbb, 0x7
 /* in: MIDI for NI */
 #define IOCTL_NIWINE_MIDI_WRITE CTL_CODE(FILE_DEVICE_UNKNOWN, 0x902, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
-/* frames between nimidi.exe and ni-maschine, both directions:
+/* frames between nimidi.exe and ni-maschine, and between bmidilib2.dll and
+ * nimidi.exe (a message each, port = the process's id of it), both directions:
  * u8 type, u8 port, u16 length (little endian), payload */
 #define NIMIDI_PORT_ADD    1 /* payload: port name, UTF-8 */
 #define NIMIDI_PORT_REMOVE 2
 #define NIMIDI_DATA        3 /* payload: MIDI bytes */
 #define NIMIDI_HEADER      4
+#define NIMIDI_FRAME_MAX   (NIMIDI_HEADER + 0xffff)
+
+#define NIMIDI_PIPE L"\\\\.\\pipe\\ni-wine-midi"
 
 #endif

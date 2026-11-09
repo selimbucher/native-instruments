@@ -8,24 +8,18 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <linux/usbdevice_fs.h>
-#include "mk3.h"
+#include "device.h"
 #include "util.h"
 
-#define HID_ID "HID_ID=0003:000017CC:00001600"
+/* the MK3's display interface */
 #define DISPLAY_INTERFACE 5
 #define DISPLAY_ENDPOINT 0x04
 /* a multiple of the endpoint's 512-byte packets, so the device sees one transfer */
 #define BULK_CHUNK 16384
 #define BULK_TIMEOUT_MS 1000
 
-/* input report 0x01 */
+/* input report 0x01, the layout in the model */
 #define REPORT_CONTROLS 0x01
-#define CONTROLS_BUTTONS 1          /* MK3_BUTTONS bits */
-#define CONTROLS_ENCODER 11         /* low nibble, wraps around */
-#define CONTROLS_KNOBS 12           /* u16 each, 0-999, wraps around */
-#define CONTROLS_STRIP 30           /* u16 first finger, u16 second finger */
-#define CONTROLS_PEDAL 34           /* u16 */
-#define CONTROLS_SIZE 36
 #define ENCODER_POSITIONS 16
 
 /* input report 0x02: up to 21 entries {pad, kind << 4 | value >> 8, value & 0xff}, then zeros */
@@ -33,11 +27,19 @@
 #define PAD_ENTRY 3
 #define PADS_SIZE 64
 
-/* output reports: LEDs below MK3_LED_STRIP, the others */
+/* output reports: the LEDs (the MK3's below its strip, then 0x81 the others) */
 #define REPORT_LEDS 0x80
 #define REPORT_LEDS_2 0x81
 
-/* display frames: header, commands, RGB565 big endian */
+/* the Mikro's display: E0, x, y, w, h (u16 little endian, y and h in 8-row pages),
+ * then up to 256 bytes, page by page, a column per byte, bit k = row k, 1 = unlit */
+#define REPORT_MONO 0xe0
+#define MONO_HEADER 9
+#define MONO_DATA 256
+#define MONO_REPORT (MONO_HEADER + MONO_DATA)
+#define MONO_PAGES (MONO_H / 8)
+
+/* the MK3's display frames: header, commands, RGB565 big endian */
 #define FRAME_HEADER 16
 #define CMD_PIXELS 0x00             /* n pixel pairs follow */
 #define CMD_REPEAT 0x01             /* the next pixel pair n times */
@@ -47,9 +49,9 @@
 
 static int read_file(const char *path, char *buf, int size)
 {
-    int fd = open(path, O_RDONLY | O_CLOEXEC), n;
+    int fd, n;
 
-    if (fd < 0) return -1;
+    if ((fd = open(path, O_RDONLY | O_CLOEXEC)) < 0) return -1;
     n = read(fd, buf, size - 1);
     close(fd);
     if (n < 0) return -1;
@@ -83,7 +85,7 @@ static int usb_node(const char *hidraw, char *buf, int size)
     return snprintf(buf, size, "/dev/bus/usb/%03d/%03d", bus, num) < size ? 0 : -1;
 }
 
-int mk3_find(struct mk3 *dev)
+int device_find(struct device *dev)
 {
     char path[PATH_MAX], uevent[1024];
     struct dirent *ent;
@@ -95,25 +97,35 @@ int mk3_find(struct mk3 *dev)
     {
         if (ent->d_name[0] == '.') continue;
         if (!FORMAT(path, "/sys/class/hidraw/%s/device/uevent", ent->d_name)) continue;
-        if (read_file(path, uevent, sizeof(uevent)) < 0 || !strstr(uevent, HID_ID)) continue;
-        if (usb_node(ent->d_name, dev->usb, sizeof(dev->usb))) continue;
+        if (read_file(path, uevent, sizeof(uevent)) < 0 || !strstr(uevent, dev->model->hid_id)) continue;
+        /* the MK3's display interface is on the USB device */
+        dev->usb[0] = 0;
+        if (dev->model->display == DISPLAY_SCREENS && usb_node(ent->d_name, dev->usb, sizeof(dev->usb)))
+            continue;
         if (FORMAT(dev->hidraw, "/dev/%s", ent->d_name)) found = 0;
     }
     closedir(dir);
     return found;
 }
 
-int mk3_open(struct mk3 *dev)
+/* the MK3's display interface */
+static int claim_display(struct device *dev)
 {
     unsigned int iface = DISPLAY_INTERFACE;
+
+    if (dev->usbfs < 0 && (dev->usbfs = open(dev->usb, O_RDWR | O_CLOEXEC)) < 0) return -errno;
+    /* on EBUSY the node stays open, closing it would look like the other program's close */
+    return ioctl(dev->usbfs, USBDEVFS_CLAIMINTERFACE, &iface) < 0 ? -errno : 0;
+}
+
+int device_open(struct device *dev)
+{
     int err;
 
-    if (dev->usbfs < 0 && (dev->usbfs = open(dev->usb, O_RDWR | O_CLOEXEC)) < 0) goto fail;
-    if (ioctl(dev->usbfs, USBDEVFS_CLAIMINTERFACE, &iface) < 0)
+    if (dev->model->display == DISPLAY_SCREENS && (err = claim_display(dev)))
     {
-        /* the node stays open, closing it would look like the other program's close */
-        if (errno == EBUSY) return -EBUSY;
-        goto fail;
+        if (err != -EBUSY) device_close(dev);
+        return err;
     }
     if ((dev->hid = open(dev->hidraw, O_RDWR | O_NONBLOCK | O_CLOEXEC)) < 0) goto fail;
     dev->seen = false;
@@ -125,11 +137,11 @@ int mk3_open(struct mk3 *dev)
 
 fail:
     err = errno;
-    mk3_close(dev);
+    device_close(dev);
     return -err;
 }
 
-void mk3_close(struct mk3 *dev)
+void device_close(struct device *dev)
 {
     if (dev->hid >= 0) close(dev->hid);
     /* closing releases the claimed interface */
@@ -158,36 +170,40 @@ static int shortest(int delta, int period)
 
 /* buttons, encoder, knobs, touch strip, pedal; the first report after opening
  * only sets where the encoder, knobs and pedal are */
-static void controls(struct mk3 *dev, struct engine *e, const unsigned char *r)
+static void controls(struct device *dev, struct engine *e, const unsigned char *r)
 {
-    const unsigned char *buttons = r + CONTROLS_BUTTONS;
+    const struct model *m = dev->model;
+    const unsigned char *buttons = r + 1;
     int i, v, delta, first, second;
 
-    for (i = 0; i < MK3_BUTTONS; i++)
+    for (i = 0; i < m->button_bits; i++)
         if (bit_set(buttons, i) != bit_set(dev->buttons, i)) engine_button(e, i, bit_set(buttons, i));
-    memcpy(dev->buttons, buttons, sizeof(dev->buttons));
+    memcpy(dev->buttons, buttons, (m->button_bits + 7) / 8);
 
-    v = r[CONTROLS_ENCODER] & (ENCODER_POSITIONS - 1);
+    v = r[m->encoder_at] & (ENCODER_POSITIONS - 1);
     if (dev->seen && (delta = shortest(v - dev->encoder, ENCODER_POSITIONS))) engine_encoder(e, delta);
     dev->encoder = v;
 
-    for (i = 0; i < MK3_KNOBS; i++)
+    for (i = 0; m->knobs_at >= 0 && i < KNOBS; i++)
     {
-        v = u16(r + CONTROLS_KNOBS + 2 * i);
-        if (dev->seen && (delta = shortest(v - dev->knobs[i], MK3_KNOB_COUNTS))) engine_knob(e, i + 1, delta);
+        v = u16(r + m->knobs_at + 2 * i);
+        if (dev->seen && (delta = shortest(v - dev->knobs[i], KNOB_COUNTS))) engine_knob(e, i + 1, delta);
         dev->knobs[i] = v;
     }
 
     /* with two fingers the first one counts */
-    first = u16(r + CONTROLS_STRIP);
-    second = u16(r + CONTROLS_STRIP + 2);
+    first = u16(r + m->strip_at);
+    second = u16(r + m->strip_at + 2);
     v = first ? first : second;
     if (v != dev->strip) engine_strip(e, v);
     dev->strip = v;
 
-    v = clamp(u16(r + CONTROLS_PEDAL), 0, MK3_PEDAL_MAX);
-    if (dev->seen && v != dev->pedal) engine_pedal(e, v);
-    dev->pedal = v;
+    if (m->pedal_at >= 0)
+    {
+        v = clamp(u16(r + m->pedal_at), 0, PEDAL_MAX);
+        if (dev->seen && v != dev->pedal) engine_pedal(e, v);
+        dev->pedal = v;
+    }
     dev->seen = true;
 }
 
@@ -204,39 +220,40 @@ static void pads(struct engine *e, const unsigned char *r, int len)
     }
 }
 
-void mk3_report(struct mk3 *dev, struct engine *e, const unsigned char *r, int len)
+void device_report(struct device *dev, struct engine *e, const unsigned char *r, int len)
 {
-    if (r[0] == REPORT_CONTROLS && len >= CONTROLS_SIZE) controls(dev, e, r);
+    if (r[0] == REPORT_CONTROLS && len >= dev->model->report_size) controls(dev, e, r);
     else if (r[0] == REPORT_PADS) pads(e, r, len);
 }
 
-int mk3_read(struct mk3 *dev, struct engine *e)
+int device_read(struct device *dev, struct engine *e)
 {
     unsigned char r[128];
     ssize_t n;
 
-    while ((n = read(dev->hid, r, sizeof(r))) > 0) mk3_report(dev, e, r, n);
+    while ((n = read(dev->hid, r, sizeof(r))) > 0) device_report(dev, e, r, n);
     return n < 0 && errno != EAGAIN && errno != EINTR ? -1 : 0;
 }
 
-static int write_leds(struct mk3 *dev, int report, const unsigned char *leds, int count)
+/* LEDs first to first + count, if they changed */
+static int write_leds(struct device *dev, int report, const unsigned char *leds, int first, int count)
 {
-    unsigned char r[1 + MK3_LEDS];
+    unsigned char r[1 + MAX_LEDS];
 
+    if (dev->leds_sent && !memcmp(leds + first, dev->leds + first, count)) return 0;
     r[0] = report;
-    memcpy(r + 1, leds, count);
+    memcpy(r + 1, leds + first, count);
     return write(dev->hid, r, 1 + count) < 0 ? -1 : 0;
 }
 
-int mk3_leds(struct mk3 *dev, const unsigned char leds[MK3_LEDS])
+int device_leds(struct device *dev, const unsigned char leds[MAX_LEDS])
 {
-    const int second = MK3_LEDS - MK3_LED_STRIP;
+    const struct model *m = dev->model;
+    int first = m->led_report_2 ? m->led_report_2 : m->leds;
 
-    if (!dev->leds_sent || memcmp(leds, dev->leds, MK3_LED_STRIP))
-        if (write_leds(dev, REPORT_LEDS, leds, MK3_LED_STRIP)) return -1;
-    if (!dev->leds_sent || memcmp(leds + MK3_LED_STRIP, dev->leds + MK3_LED_STRIP, second))
-        if (write_leds(dev, REPORT_LEDS_2, leds + MK3_LED_STRIP, second)) return -1;
-    memcpy(dev->leds, leds, MK3_LEDS);
+    if (write_leds(dev, REPORT_LEDS, leds, 0, first)) return -1;
+    if (first < m->leds && write_leds(dev, REPORT_LEDS_2, leds, first, m->leds - first)) return -1;
+    memcpy(dev->leds, leds, m->leds);
     dev->leds_sent = true;
     return 0;
 }
@@ -267,7 +284,7 @@ static bool same_pair(const unsigned short *a, const unsigned short *b)
     return a[0] == b[0] && a[1] == b[1];
 }
 
-int mk3_encode(unsigned char *out, int screen, const struct canvas *c, int x, int y, int w, int h)
+int device_encode(unsigned char *out, int screen, const struct canvas *c, int x, int y, int w, int h)
 {
     static unsigned short px[SCREEN_W * SCREEN_H];
     unsigned char *p = out, *literal = NULL;
@@ -328,7 +345,7 @@ static int bulk(int fd, unsigned char *data, int len)
 }
 
 /* the rows and columns that differ from what was sent, false if nothing does */
-static bool dirty_region(const struct mk3 *dev, const struct canvas *c, int screen,
+static bool dirty_region(const struct device *dev, const struct canvas *c, int screen,
                          int *left, int *top, int *right, int *bottom)
 {
     const struct canvas *sent = &dev->sent[screen];
@@ -353,7 +370,7 @@ static bool dirty_region(const struct mk3 *dev, const struct canvas *c, int scre
     return *bottom >= 0;
 }
 
-int mk3_screens(struct mk3 *dev, const struct canvas screens[2])
+int device_screens(struct device *dev, const struct canvas screens[2])
 {
     static unsigned char frame[FRAME_HEADER + 4 * SCREEN_W * SCREEN_H + 64];
     int i, len, left, top, right, bottom;
@@ -364,10 +381,85 @@ int mk3_screens(struct mk3 *dev, const struct canvas screens[2])
         /* pixels go in pairs */
         left &= ~1;
         right |= 1;
-        len = mk3_encode(frame, i, &screens[i], left, top, right - left + 1, bottom - top + 1);
+        len = device_encode(frame, i, &screens[i], left, top, right - left + 1, bottom - top + 1);
         if (bulk(dev->usbfs, frame, len)) return -1;
     }
     memcpy(dev->sent, screens, sizeof(dev->sent));
+    dev->screens_sent = true;
+    return 0;
+}
+
+static unsigned char *put16le(unsigned char *p, int v)
+{
+    p[0] = v;
+    p[1] = v >> 8;
+    return p + 2;
+}
+
+/* 8 rows of a column as the Mikro takes them */
+static unsigned char mono_byte(const struct mono_canvas *c, int x, int page)
+{
+    unsigned char byte = 0;
+    int k;
+
+    for (k = 0; k < 8; k++)
+        if (!c->px[8 * page + k][x]) byte |= 1 << k;
+    return byte;
+}
+
+int device_encode_mono(unsigned char *out, const struct mono_canvas *c, int x, int page, int w, int pages)
+{
+    unsigned char *p = out;
+    int i, j;
+
+    *p++ = REPORT_MONO;
+    p = put16le(put16le(put16le(put16le(p, x), page), w), pages);
+    for (j = page; j < page + pages; j++)
+        for (i = x; i < x + w; i++) *p++ = mono_byte(c, i, j);
+    memset(p, 0, out + MONO_REPORT - p);
+    return MONO_REPORT;
+}
+
+/* the columns and pages that differ from what was sent, false if nothing does */
+static bool mono_dirty(const struct device *dev, const struct mono_canvas *c,
+                       int *left, int *right, int *first, int *last)
+{
+    int x, page;
+
+    *left = MONO_W;
+    *right = -1;
+    *first = MONO_PAGES;
+    *last = -1;
+    for (page = 0; page < MONO_PAGES; page++)
+        for (x = 0; x < MONO_W; x++)
+        {
+            if (dev->screens_sent && mono_byte(c, x, page) == mono_byte(&dev->mono_sent, x, page)) continue;
+            if (x < *left) *left = x;
+            if (x > *right) *right = x;
+            if (page < *first) *first = page;
+            *last = page;
+        }
+    return *last >= 0;
+}
+
+/* the changed region, in as many 8-row pages per report as fit */
+int device_mono(struct device *dev, const struct mono_canvas *c)
+{
+    unsigned char report[MONO_REPORT];
+    int left, right, first, last, w, page, pages;
+
+    if (mono_dirty(dev, c, &left, &right, &first, &last))
+    {
+        w = right - left + 1;
+        for (page = first; page <= last; page += pages)
+        {
+            pages = MONO_DATA / w;
+            if (pages > last - page + 1) pages = last - page + 1;
+            device_encode_mono(report, c, left, page, w, pages);
+            if (write(dev->hid, report, MONO_REPORT) < 0) return -1;
+        }
+    }
+    memcpy(&dev->mono_sent, c, sizeof(*c));
     dev->screens_sent = true;
     return 0;
 }

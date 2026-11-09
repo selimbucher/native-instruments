@@ -12,9 +12,11 @@ src/ni_wine/data/nimk3.sys
 src/ni_wine/data/nirescan.exe
 src/ni_wine/data/nimidi.exe
 src/ni_wine/data/nidrvinst.exe
+src/ni_wine/data/bmidilib2.dll
 src/ni_wine/data/maschine-mk3.inf
 hardware/*.sys
 hardware/*.exe
+hardware/*.dll
 maschine/ni-maschine
 maschine/test
 result-*

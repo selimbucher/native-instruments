@@ -92,7 +92,12 @@ def test_unit_text_quotes_paths():
 def test_outdated_files_compares_with_the_shipped_ones(tmp_path, monkeypatch):
     shipped = tmp_path / "data"
     shipped.mkdir()
-    names = (hardware.INF, hardware.DRIVER, *(f"{name}.exe" for name in hardware.SERVICES))
+    names = (
+        hardware.INF,
+        hardware.DRIVER,
+        hardware.BMIDI,
+        *(f"{name}.exe" for name in hardware.SERVICES),
+    )
     for name in names:
         (shipped / name).write_bytes(name.encode())
     monkeypatch.setattr(hardware, "_source", lambda name: shipped / name)

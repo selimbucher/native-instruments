@@ -1,11 +1,14 @@
 /*
- * Relays the virtual MIDI ports of ni-wine's drivers (nimk3.sys: Maschine MK3
- * Ctrl MIDI) to ni-maschine, which has the ALSA port (maschine/README.md).
+ * Relays virtual MIDI ports to ni-maschine, which has the ALSA ports
+ * (maschine/README.md): those of ni-wine's drivers (nimk3.sys: Maschine MK3
+ * Ctrl MIDI) and those NI's services make with bmidilib2.dll, ni-wine's
+ * stand-in for Bome's library (Maschine Mikro MK3), which connects to the pipe
+ * NIMIDI_PIPE.
  *
  * While at least one port exists, it runs the Unix path in
- * HKLM\Software\ni-wine\ni-maschine (written by ni-wine) with
- * `--attach N`, which connects to 127.0.0.1:N and hands the connection to
- * the running ni-maschine. Wine starts Unix programs detached, without a process handle,
+ * HKLM\Software\ni-wine\ni-maschine (written by ni-wine) with `--attach N`,
+ * which connects to 127.0.0.1:N and hands the connection to the running
+ * ni-maschine. Wine starts Unix programs detached, without a process handle,
  * so the connection tells whether ni-maschine is there. Wine can't give a
  * service's Unix child pipes as stdio (named pipes have no Unix fds, children
  * of console-less processes get /dev/null) and its winsock has no AF_UNIX.
@@ -34,13 +37,29 @@ CMAPI CONFIGRET WINAPI CM_Unregister_Notification(HCMNOTIFICATION);
 #define CONNECT_MS 10000
 #define WAIT_MS 30000
 
+#define MAX_CLIENTS 8
+
+/* an NI process with ports through bmidilib2.dll */
+struct client
+{
+    HANDLE pipe;           /* overlapped, message mode */
+    HANDLE thread;         /* reads */
+    CRITICAL_SECTION write_cs;
+    BYTE *out;             /* the frame being written */
+};
+
 struct port
 {
+    BOOL used;
+    char name[80];
+    /* a driver's port */
     WCHAR *path;
     HANDLE file;           /* overlapped */
     HANDLE thread;         /* reads */
-    char name[80];
     BOOL dead;             /* the reader stopped */
+    /* a bmidilib2.dll client's port */
+    struct client *client;
+    BYTE local;            /* the client's id of it */
 };
 
 static SERVICE_STATUS_HANDLE status_handle;
@@ -48,6 +67,7 @@ static HANDLE stop_event, change_event;
 /* frames name port i by its index */
 static struct port ports[MAX_PORTS];
 static CRITICAL_SECTION ports_cs;
+static struct client clients[MAX_CLIENTS];
 /* the connection to ni-maschine, INVALID_SOCKET while there is none */
 static SOCKET maschine = INVALID_SOCKET;
 static CRITICAL_SECTION send_cs;
@@ -220,12 +240,15 @@ static DWORD WINAPI read_thread(void *arg)
 /* with ports_cs held */
 static void remove_port(struct port *port)
 {
-    CancelIoEx(port->file, NULL);
-    WaitForSingleObject(port->thread, INFINITE);
-    CloseHandle(port->thread);
-    CloseHandle(port->file);
-    log_line(L"nimidi: removed %s\n", port->path);
-    HeapFree(GetProcessHeap(), 0, port->path);
+    if (port->path)
+    {
+        CancelIoEx(port->file, NULL);
+        WaitForSingleObject(port->thread, INFINITE);
+        CloseHandle(port->thread);
+        CloseHandle(port->file);
+        HeapFree(GetProcessHeap(), 0, port->path);
+    }
+    log_line(L"nimidi: removed %S\n", port->name);
     memset(port, 0, sizeof(*port));
     EnterCriticalSection(&send_cs);
     send_frame(NIMIDI_PORT_REMOVE, port - ports, NULL, 0);
@@ -242,7 +265,7 @@ static void name_port(struct port *port, const char *base)
         if (n == 1) lstrcpynA(port->name, base, sizeof(port->name) - 4);
         else wsprintfA(port->name + lstrlenA(base), " %u", n);
         for (i = 0; i < MAX_PORTS; i++)
-            if (&ports[i] != port && ports[i].path && !lstrcmpA(ports[i].name, port->name)) break;
+            if (&ports[i] != port && ports[i].used && !lstrcmpA(ports[i].name, port->name)) break;
         if (i == MAX_PORTS) return;
     }
 }
@@ -263,15 +286,33 @@ static BOOL query_name(HANDLE file, char *name, DWORD size)
 }
 
 /* with ports_cs held */
+static struct port *free_port(void)
+{
+    unsigned int i;
+
+    for (i = 0; i < MAX_PORTS; i++)
+        if (!ports[i].used) return &ports[i];
+    return NULL;
+}
+
+/* with ports_cs held */
+static void announce(struct port *port, const char *base)
+{
+    port->used = TRUE;
+    name_port(port, base);
+    EnterCriticalSection(&send_cs);
+    send_frame(NIMIDI_PORT_ADD, port - ports, port->name, lstrlenA(port->name));
+    LeaveCriticalSection(&send_cs);
+    log_line(L"nimidi: added %S\n", port->name);
+}
+
+/* with ports_cs held */
 static void add_port(const WCHAR *path)
 {
-    struct port *port = NULL;
+    struct port *port = free_port();
     char base[64];
-    unsigned int i;
     HANDLE file;
 
-    for (i = 0; i < MAX_PORTS && !port; i++)
-        if (!ports[i].path) port = &ports[i];
     if (!port) return;
 
     file = CreateFileW(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
@@ -290,15 +331,11 @@ static void add_port(const WCHAR *path)
     }
     lstrcpyW(port->path, path);
     port->file = file;
-    name_port(port, base);
-    EnterCriticalSection(&send_cs);
-    send_frame(NIMIDI_PORT_ADD, port - ports, port->name, lstrlenA(port->name));
-    LeaveCriticalSection(&send_cs);
+    announce(port, base);
     if (!(port->thread = CreateThread(NULL, 0, read_thread, port, 0, NULL))) port->dead = TRUE;
-    log_line(L"nimidi: added %s\n", path);
 }
 
-/* the ports follow the present interfaces; returns how many there are */
+/* the drivers' ports follow the present interfaces; returns how many ports there are */
 static unsigned int sync_ports(void)
 {
     unsigned int i, count = 0;
@@ -314,20 +351,174 @@ static unsigned int sync_ports(void)
         if (i == MAX_PORTS) add_port(p);
     }
     for (i = 0; i < MAX_PORTS; i++)
-        if (ports[i].path) count++;
+        if (ports[i].used) count++;
     LeaveCriticalSection(&ports_cs);
     HeapFree(GetProcessHeap(), 0, list);
     return count;
 }
 
-/* ni-maschine -> driver */
+/* bmidilib2.dll clients */
+
+static void write_client(struct client *client, BYTE type, BYTE local, const void *data, DWORD len)
+{
+    OVERLAPPED ov = {0};
+    DWORD done;
+    BOOL ok;
+
+    if (len > NIMIDI_FRAME_MAX - NIMIDI_HEADER) return;
+    if (!(ov.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL))) return;
+    EnterCriticalSection(&client->write_cs);
+    client->out[0] = type;
+    client->out[1] = local;
+    client->out[2] = len & 0xff;
+    client->out[3] = len >> 8;
+    memcpy(client->out + NIMIDI_HEADER, data, len);
+    ok = WriteFile(client->pipe, client->out, NIMIDI_HEADER + len, &done, &ov);
+    finish(client->pipe, &ov, ok, &done);
+    LeaveCriticalSection(&client->write_cs);
+    CloseHandle(ov.hEvent);
+}
+
+/* with ports_cs held */
+static struct port *client_port(struct client *client, BYTE local)
+{
+    unsigned int i;
+
+    for (i = 0; i < MAX_PORTS; i++)
+        if (ports[i].used && ports[i].client == client && ports[i].local == local) return &ports[i];
+    return NULL;
+}
+
+/* a frame from a client */
+static void client_frame(struct client *client, const BYTE *frame, DWORD len)
+{
+    const BYTE *payload = frame + NIMIDI_HEADER;
+    DWORD size = frame[2] | frame[3] << 8;
+    BYTE local = frame[1];
+    struct port *port;
+    char name[64];
+
+    if (len < NIMIDI_HEADER || NIMIDI_HEADER + size > len) return;
+    EnterCriticalSection(&ports_cs);
+    port = client_port(client, local);
+    switch (frame[0])
+    {
+    case NIMIDI_PORT_ADD:
+        if (port || !(port = free_port())) break;
+        lstrcpynA(name, (const char *)payload, min(size + 1, sizeof(name)));
+        port->client = client;
+        port->local = local;
+        announce(port, name);
+        SetEvent(change_event);
+        break;
+    case NIMIDI_PORT_REMOVE:
+        if (!port) break;
+        remove_port(port);
+        SetEvent(change_event);
+        break;
+    case NIMIDI_DATA:
+        if (!port || !size) break;
+        EnterCriticalSection(&send_cs);
+        send_frame(NIMIDI_DATA, port - ports, payload, size);
+        LeaveCriticalSection(&send_cs);
+        break;
+    }
+    LeaveCriticalSection(&ports_cs);
+}
+
+/* reads a client's frames until it goes away, then its ports go too */
+static DWORD WINAPI client_thread(void *arg)
+{
+    struct client *client = arg;
+    OVERLAPPED ov = {0};
+    unsigned int i;
+    BYTE *buf;
+    DWORD len;
+    BOOL ok;
+
+    ov.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
+    if ((buf = HeapAlloc(GetProcessHeap(), 0, NIMIDI_FRAME_MAX)) && ov.hEvent)
+    {
+        for (;;)
+        {
+            ResetEvent(ov.hEvent);
+            ok = ReadFile(client->pipe, buf, NIMIDI_FRAME_MAX, &len, &ov);
+            if (!finish(client->pipe, &ov, ok, &len)) break;
+            client_frame(client, buf, len);
+        }
+    }
+    EnterCriticalSection(&ports_cs);
+    for (i = 0; i < MAX_PORTS; i++)
+        if (ports[i].used && ports[i].client == client) remove_port(&ports[i]);
+    LeaveCriticalSection(&ports_cs);
+    SetEvent(change_event);
+    HeapFree(GetProcessHeap(), 0, buf);
+    if (ov.hEvent) CloseHandle(ov.hEvent);
+    return 0;
+}
+
+static void start_client(HANDLE pipe)
+{
+    struct client *client = NULL;
+    unsigned int i;
+
+    for (i = 0; i < MAX_CLIENTS && !client; i++)
+    {
+        if (clients[i].thread && WaitForSingleObject(clients[i].thread, 0) == WAIT_OBJECT_0)
+        {
+            CloseHandle(clients[i].thread);
+            CloseHandle(clients[i].pipe);
+            clients[i].thread = NULL;
+        }
+        if (!clients[i].thread) client = &clients[i];
+    }
+    if (client && !client->out) client->out = HeapAlloc(GetProcessHeap(), 0, NIMIDI_FRAME_MAX);
+    if (!client || !client->out)
+    {
+        CloseHandle(pipe);
+        return;
+    }
+    client->pipe = pipe;
+    if (!(client->thread = CreateThread(NULL, 0, client_thread, client, 0, NULL))) CloseHandle(pipe);
+}
+
+/* accepts bmidilib2.dll clients until the service stops */
+static DWORD WINAPI pipe_thread(void *arg)
+{
+    OVERLAPPED ov = {0};
+    HANDLE pipe;
+    DWORD len;
+    BOOL ok;
+
+    if (!(ov.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL))) return 0;
+    while (WaitForSingleObject(stop_event, 0))
+    {
+        pipe = CreateNamedPipeW(NIMIDI_PIPE, PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
+                PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT, PIPE_UNLIMITED_INSTANCES,
+                NIMIDI_FRAME_MAX, NIMIDI_FRAME_MAX, 0, NULL);
+        if (pipe == INVALID_HANDLE_VALUE)
+        {
+            log_line(L"nimidi: creating the pipe failed, error %u\n", GetLastError());
+            WaitForSingleObject(stop_event, RETRY_MS);
+            continue;
+        }
+        ResetEvent(ov.hEvent);
+        ok = ConnectNamedPipe(pipe, &ov);
+        if (ok || GetLastError() == ERROR_PIPE_CONNECTED || finish(pipe, &ov, ok, &len)) start_client(pipe);
+        else CloseHandle(pipe);
+    }
+    CloseHandle(ov.hEvent);
+    return 0;
+}
+
+/* ni-maschine -> the ports */
 static DWORD WINAPI maschine_thread(void *arg)
 {
     SOCKET s = (SOCKET)(ULONG_PTR)arg;
     DWORD have = 0, done, size, len;
     OVERLAPPED ov = {0};
+    struct port *port;
     BYTE *buf, *f;
-    HANDLE file;
     int got;
     BOOL ok;
 
@@ -343,11 +534,15 @@ static DWORD WINAPI maschine_thread(void *arg)
             if (NIMIDI_HEADER + size > have - done) break;
             if (f[0] != NIMIDI_DATA || !size || f[1] >= MAX_PORTS) continue;
             EnterCriticalSection(&ports_cs);
-            if ((file = ports[f[1]].path ? ports[f[1]].file : NULL))
+            port = &ports[f[1]];
+            if (port->client)
+                write_client(port->client, NIMIDI_DATA, port->local, f + NIMIDI_HEADER, size);
+            else if (port->path)
             {
                 ResetEvent(ov.hEvent);
-                ok = DeviceIoControl(file, IOCTL_NIWINE_MIDI_WRITE, f + NIMIDI_HEADER, size, NULL, 0, &len, &ov);
-                finish(file, &ov, ok, &len);
+                ok = DeviceIoControl(port->file, IOCTL_NIWINE_MIDI_WRITE, f + NIMIDI_HEADER, size, NULL, 0,
+                                     &len, &ov);
+                finish(port->file, &ov, ok, &len);
             }
             LeaveCriticalSection(&ports_cs);
         }
@@ -502,7 +697,7 @@ static BOOL connect_maschine(struct maschine_link *link)
     EnterCriticalSection(&send_cs);
     maschine = s;
     for (i = 0; i < MAX_PORTS; i++)
-        if (ports[i].path) send_frame(NIMIDI_PORT_ADD, i, ports[i].name, lstrlenA(ports[i].name));
+        if (ports[i].used) send_frame(NIMIDI_PORT_ADD, i, ports[i].name, lstrlenA(ports[i].name));
     LeaveCriticalSection(&send_cs);
     LeaveCriticalSection(&ports_cs);
     if (!(link->thread = CreateThread(NULL, 0, maschine_thread, (void *)(ULONG_PTR)s, 0, NULL)))
@@ -551,9 +746,9 @@ static void WINAPI service_main(DWORD argc, WCHAR **argv)
     HCMNOTIFICATION notify = NULL;
     ULONGLONG retry_at = 0, retry_ms = RETRY_MS;
     unsigned int i, count;
+    HANDLE handles[3], pipes;
     WSADATA wsa;
     DWORD timeout;
-    HANDLE handles[3];
 
     if (!(status_handle = RegisterServiceCtrlHandlerExW(L"nimidi", handler, NULL))) return;
     stop_event = CreateEventW(NULL, TRUE, FALSE, NULL);
@@ -565,6 +760,7 @@ static void WINAPI service_main(DWORD argc, WCHAR **argv)
     }
     InitializeCriticalSection(&ports_cs);
     InitializeCriticalSection(&send_cs);
+    for (i = 0; i < MAX_CLIENTS; i++) InitializeCriticalSection(&clients[i].write_cs);
     set_state(SERVICE_RUNNING);
 
     wait_for_plugplay();
@@ -573,6 +769,7 @@ static void WINAPI service_main(DWORD argc, WCHAR **argv)
     filter.u.DeviceInterface.ClassGuid = GUID_DEVINTERFACE_NIWINE_MIDI;
     if (CM_Register_Notification(&filter, NULL, interface_changed, &notify))
         log_line(L"nimidi: CM_Register_Notification failed\n");
+    pipes = CreateThread(NULL, 0, pipe_thread, NULL, 0, NULL);
 
     for (;;)
     {
@@ -605,9 +802,12 @@ static void WINAPI service_main(DWORD argc, WCHAR **argv)
 
     if (notify) CM_Unregister_Notification(notify);
     disconnect_maschine(&link);
+    if (pipes) WaitForSingleObject(pipes, INFINITE);
+    for (i = 0; i < MAX_CLIENTS; i++)
+        if (clients[i].thread) WaitForSingleObject(clients[i].thread, INFINITE);
     EnterCriticalSection(&ports_cs);
     for (i = 0; i < MAX_PORTS; i++)
-        if (ports[i].path) remove_port(&ports[i]);
+        if (ports[i].used) remove_port(&ports[i]);
     LeaveCriticalSection(&ports_cs);
     set_state(SERVICE_STOPPED);
 }

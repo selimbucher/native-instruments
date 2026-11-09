@@ -7,16 +7,16 @@ ALSA_CFLAGS := $(shell $(PKG_CONFIG) --cflags alsa)
 ALSA_LIBS := $(shell $(PKG_CONFIG) --libs alsa)
 DATADIR = ../src/ni_wine/data
 
-COMMON = engine.c template.c xml.c layout.c
-SRCS = main.c screen.c mk3.c seq.c $(COMMON)
+COMMON = engine.c template.c xml.c model.c
+SRCS = main.c screen.c device.c seq.c $(COMMON)
 
 all: ni-maschine
 
 ni-maschine: $(SRCS) $(wildcard *.h)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(ALSA_CFLAGS) $(LDFLAGS) -o $@ $(SRCS) $(ALSA_LIBS) -lm
 
-test: test.c screen.c mk3.c $(COMMON) $(wildcard *.h)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ test.c screen.c mk3.c $(COMMON) -lm
+test: test.c screen.c device.c $(COMMON) $(wildcard *.h)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ test.c screen.c device.c $(COMMON) -lm
 
 check: test
 	./test

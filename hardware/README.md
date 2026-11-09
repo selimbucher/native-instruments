@@ -47,15 +47,23 @@ it takes the first in name order, and `maschine-mk3.inf` sorts first.
 
 ## nimidi.exe
 
-An auto-start service that relays the virtual MIDI ports of the drivers
-(interface `GUID_DEVINTERFACE_NIWINE_MIDI` in `nimidi.h`) to ni-maschine
-(`../maschine`), which has the ALSA port. While a port exists it starts
-`ni-maschine --attach N` (the Unix path ni-wine writes to
-`HKLM\Software\ni-wine\ni-maschine`), which connects to 127.0.0.1:N and
-hands the connection to the running ni-maschine. A port it announces tells
-ni-maschine to leave the MK3 to NI's agent. Wine has no AF_UNIX sockets and
-can't give a service's Unix child pipes as stdio, hence TCP. Only a peer of
-the same Unix user is accepted (`/proc/net/tcp`).
+An auto-start service that relays virtual MIDI ports to ni-maschine
+(`../maschine`), which has the ALSA ports: those of the drivers (interface
+`GUID_DEVINTERFACE_NIWINE_MIDI` in `nimidi.h`) and those of bmidilib2.dll's
+clients. While a port exists it starts `ni-maschine --attach N` (the Unix
+path ni-wine writes to `HKLM\Software\ni-wine\ni-maschine`), which connects
+to 127.0.0.1:N and hands the connection to the running ni-maschine. A
+controller's port it announces tells ni-maschine to leave that controller to
+NI's agent. Wine has no AF_UNIX sockets and can't give a service's Unix child
+pipes as stdio, hence TCP. Only a peer of the same Unix user is accepted
+(`/proc/net/tcp`).
+
+## bmidilib2.dll
+
+Replaces Bome's library in `system32`. NI's services make their virtual MIDI
+ports with it, among them the Maschine Mikro MK3's, and Bome's bus driver
+doesn't load in Wine. It has the functions NI's services import and sends
+the ports to nimidi.exe over the pipe in `nimidi.h`, one client per process.
 
 ## nidrvinst.exe
 
@@ -65,7 +73,7 @@ Rebinds devices that NI's INF got before ni-wine's was there:
 
 ## Building
 
-    make            # nimk3.sys nirescan.exe nimidi.exe nidrvinst.exe
+    make            # nimk3.sys nirescan.exe nimidi.exe nidrvinst.exe bmidilib2.dll
     make install    # copies them and the INF into ../src/ni_wine/data
 
 Check the imports (the driver must import ntoskrnl.exe and hal.dll only,

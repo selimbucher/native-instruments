@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "layout.h"
+#include "model.h"
 #include "template.h"
 #include "util.h"
 #include "xml.h"
@@ -49,6 +49,7 @@ static struct control *add(struct controls *list, enum control_type type, const 
     c = &items[list->count++];
     snprintf(c->id, sizeof(c->id), "%s", id ? id : "");
     c->type = type;
+    c->strip = type == CONTROL_KNOB && !strcmp(c->id, "Touchstrip");
     c->message = MSG_CC;
     c->number = 1;
     c->max = 127;
@@ -457,26 +458,32 @@ static void add_led(struct controls *list, const char *id, int message, int numb
     led->number = number;
 }
 
-static void default_buttons(struct map *map)
+/* the MK3's buttons that NI's default template treats specially */
+#define MK3_ENCODER_UP 0x02     /* to 0x05: up, right, down, left */
+#define MK3_ENCODER_LEFT 0x05
+#define MK3_ENCODER_CAP 0x47
+
+static void mk3_controls(struct map *map)
 {
+    const struct model *m = &maschine_mk3;
     struct control *c;
     bool footswitch, encoder_direction;
     int bit;
 
-    for (bit = 0; bit < BTN_COUNT; bit++)
+    for (bit = 0; bit <= m->touchstrip_cap; bit++)
     {
-        const struct button_info *b = &mk3_buttons[bit];
+        const struct button_info *b = &m->buttons[bit];
 
         /* Button1-8 and KnobCap1-8 belong to the knob pages */
-        if (!b->id || bit == BTN_SHIFT || starts_with(b->id, "Button") || starts_with(b->id, "KnobCap"))
-            continue;
+        if (!b->id || bit == m->shift) continue;
+        if (starts_with(b->id, "Button") || starts_with(b->id, "KnobCap")) continue;
         footswitch = starts_with(b->id, "FSw");
-        encoder_direction = bit >= BTN_ENCODER_UP && bit <= BTN_ENCODER_LEFT;
+        encoder_direction = bit >= MK3_ENCODER_UP && bit <= MK3_ENCODER_LEFT;
         c = add_cc(&map->controls, footswitch ? CONTROL_FOOTSWITCH : CONTROL_BUTTON, b->id, b->cc);
         if (!c) return;
         if (footswitch || encoder_direction) c->behavior = BEHAVIOR_GATE;
-        if (bit == BTN_ENCODER_CAP || bit == BTN_TOUCHSTRIP_CAP) c->enabled = false;
-        if (bit == BTN_TOUCHSTRIP_CAP)
+        if (bit == MK3_ENCODER_CAP || bit == m->touchstrip_cap) c->enabled = false;
+        if (bit == m->touchstrip_cap)
         {
             c->message = MSG_POLY_AT;
             c->number = 2;
@@ -491,7 +498,7 @@ static void default_buttons(struct map *map)
 }
 
 /* two knob pages: Button1-8, Knob1-8 and the disabled KnobCap1-8 */
-static void default_pages(struct map *map)
+static void mk3_pages(struct map *map)
 {
     static const int button_ccs[2][8] = {{22, 23, 24, 25, 26, 27, 28, 29}, {60, 61, 62, 63, 66, 67, 68, 69}};
     static const int first_knob_cc[2] = {70, 108};
@@ -525,8 +532,45 @@ static void default_pages(struct map *map)
     }
 }
 
+static void mikro_controls(struct map *map)
+{
+    const struct model *m = &maschine_mikro_mk3;
+    struct control *c;
+    int bit;
+
+    for (bit = 0; bit < m->touchstrip_cap; bit++)
+    {
+        const struct button_info *b = &m->buttons[bit];
+
+        if (!b->id || bit == m->shift) continue;
+        if (!(c = add_cc(&map->controls, CONTROL_BUTTON, b->id, b->cc))) return;
+        if (!strcmp(b->id, "Navigation Touch")) c->enabled = false;
+    }
+    add_cc(&map->controls, CONTROL_WHEEL, "Navigation", 7);
+    add_cc(&map->controls, CONTROL_KNOB, "Touchstrip", 1);
+    add_led(&map->controls, "Touchstrip", MSG_CC, 1);
+    if ((c = add_cc(&map->controls, CONTROL_BUTTON, "TouchstripCap", 2)))
+    {
+        c->message = MSG_POLY_AT;
+        c->enabled = false;
+    }
+    link_leds(&map->controls);
+}
+
+/* the Mikro has no knobs: one empty knob page */
+static void mikro_pages(struct map *map)
+{
+    struct page *page;
+    int i;
+
+    if (!(page = map->pages = calloc(1, sizeof(*map->pages)))) return;
+    map->page_count = 1;
+    snprintf(page->name, sizeof(page->name), "Knob Page");
+    for (i = 0; i < 8; i++) page->column[i] = page->column_b[i] = PALETTE_WHITE;
+}
+
 /* pad pages A-H: an octave higher each, from note 12 */
-static void default_groups(struct map *map)
+static void default_groups(struct map *map, int color)
 {
     struct control *c;
     char id[32];
@@ -539,8 +583,8 @@ static void default_groups(struct map *map)
         struct group *group = &map->groups[i];
 
         snprintf(group->name, sizeof(group->name), "Pad Page %c", 'A' + i);
-        group->color = 9;
-        for (pad = 1; pad <= MK3_PADS; pad++)
+        group->color = color;
+        for (pad = 1; pad <= PADS; pad++)
         {
             note = 12 * (i + 1) + pad - 1;
             snprintf(id, sizeof(id), "Pad%d", pad);
@@ -553,7 +597,7 @@ static void default_groups(struct map *map)
     }
 }
 
-void templates_default(struct templates *t)
+void templates_default(struct templates *t, const struct model *model)
 {
     struct map *map;
 
@@ -567,9 +611,18 @@ void templates_default(struct templates *t)
     map->wrapmode = -1;
     map->knob_pages = true;
     map->pad_pages = true;
-    default_buttons(map);
-    default_pages(map);
-    default_groups(map);
+    if (model == &maschine_mikro_mk3)
+    {
+        mikro_controls(map);
+        mikro_pages(map);
+        default_groups(map, PALETTE_RED);
+    }
+    else
+    {
+        mk3_controls(map);
+        mk3_pages(map);
+        default_groups(map, PALETTE_BLUE);
+    }
 }
 
 static void controls_free(struct controls *list)

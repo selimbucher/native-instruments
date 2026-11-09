@@ -1,4 +1,4 @@
-/* The MK3's Ctrl MIDI port as an ALSA sequencer port. */
+/* The ALSA sequencer client "Native Instruments" with a port per controller. */
 
 #ifndef SEQ_H
 #define SEQ_H
@@ -7,11 +7,14 @@
 
 struct seq;
 
-struct seq *seq_open(const char *client, const char *port);
+struct seq *seq_open(const char *client);
 void seq_close(struct seq *s);
-void seq_send(struct seq *s, const unsigned char *data, int len);
-/* the next MIDI message sent to the port, 0 if there is none */
-int seq_receive(struct seq *s, unsigned char *buf, int size);
+/* a duplex port, -1 on failure */
+int seq_add_port(struct seq *s, const char *name);
+void seq_remove_port(struct seq *s, int port);
+void seq_send(struct seq *s, int port, const unsigned char *data, int len);
+/* the next MIDI message sent to one of the ports and that port, 0 if there is none */
+int seq_receive(struct seq *s, int *port, unsigned char *buf, int size);
 int seq_poll_fds(struct seq *s, struct pollfd *fds, int max);
 
 #endif
