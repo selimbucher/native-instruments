@@ -104,11 +104,8 @@ Then rescan plugins in the DAW. The DAW may ask to be activated again.
 
 ### Maschine MK3 and Maschine Mikro MK3
 
-Plug it in before starting Maschine or the DAW. SHIFT + CHANNEL (Mikro:
-SHIFT + MASCHINE) switches MIDI mode on and off, also with no NI software
-open. MIDI mode sends to the MIDI port `Native Instruments: Maschine MK3 Ctrl
-MIDI` or `Native Instruments: Maschine Mikro MK3` and uses the templates from
-Controller Editor.
+Plug it in before starting Maschine or the DAW. MIDI mode sends to the MIDI port `Native Instruments: Maschine MK3 Ctrl
+MIDI` or `Native Instruments: Maschine Mikro MK3`.
 
 ## Troubleshooting
 
