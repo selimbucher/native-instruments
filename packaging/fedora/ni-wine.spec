@@ -1,5 +1,5 @@
 Name:           ni-wine
-Version:        2.5.0
+Version:        2.6.0
 Release:        1%{?dist}
 Summary:        Native Instruments software under Wine
 License:        GPL-3.0-or-later
@@ -79,6 +79,9 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/native-access.desktop
 
 
 %changelog
+* Tue Nov 10 2026 Selim Bucher <me@selim.one> - 2.6.0-1
+- Release 2.6.0
+
 * Mon Nov 02 2026 Selim Bucher <me@selim.one> - 2.5.0-1
 - Release 2.5.0
 
