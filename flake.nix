@@ -18,7 +18,7 @@
       runtimePath = pkgs.lib.makeBinPath [
         wine
         pkgs.winetricks
-        pkgs.xorg.xorgserver # Xvfb
+        pkgs.xorg-server # Xvfb
         pkgs.cabextract
         pkgs.p7zip
         pkgs.msitools
