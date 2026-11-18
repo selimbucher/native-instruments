@@ -109,8 +109,8 @@ MIDI` or `Native Instruments: Maschine Mikro MK3`.
 
 ## Troubleshooting
 
-If something goes wrong, `ni doctor --fix`. Native Access logs to
-`~/.wine-ni/drive_c/users/Public/Documents/Native Instruments/Logs/`,
-ni-wine to `~/.local/state/ni-wine/`. If that doesn't fix it,
-[open an issue](https://github.com/selimbucher/native-instruments/issues)
-with the `ni doctor` output.
+- Diagnostics with `ni doctor`.
+- Native Access logs to `~/.wine-ni/drive_c/users/Public/Documents/Native Instruments/Logs/`.
+- ni-wine logs to `~/.local/state/ni-wine/`.
+
+If that doesn't help, [open an issue](https://github.com/selimbucher/native-instruments/issues).
