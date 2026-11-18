@@ -114,3 +114,13 @@ MIDI` or `Native Instruments: Maschine Mikro MK3`.
 - ni-wine logs to `~/.local/state/ni-wine/`.
 
 If that doesn't help, [open an issue](https://github.com/selimbucher/native-instruments/issues).
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=selimbucher%2Fnative-instruments&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=selimbucher/native-instruments&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=selimbucher/native-instruments&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=selimbucher/native-instruments&type=date&legend=top-left" />
+ </picture>
+</a>
